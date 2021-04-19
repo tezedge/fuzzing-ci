@@ -54,6 +54,11 @@ In the *Content type* select *application/json*.
 
 Press *Add webhook*, and you're set.
 
+## Nginx Configuration
+
+A webserver might be configured to display Kcov reports. If that is Nginx, the
+[sample configuration file](samples/nginx/fuzzing-ci.conf) can be used.
+
 ## Slack Integration
 
 A Slack app should be created to interact with a channel, see
