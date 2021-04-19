@@ -1,0 +1,30 @@
+[package]
+name = "fuzz-ci"
+version = "0.1.0"
+authors = ["Alexander Koptelov"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+warp = "0.3"
+slog = { version = "2.7", features = ["max_level_trace", "release_max_level_debug"]}
+slog-term = "2.8"
+slog-async = "2.6"
+github-types = "0.1.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.2"
+clap = "2.33"
+derive-new = "0.5"
+lazy_static = "1.4"
+reqwest = { version = "0.11", features = ["json"] }
+failure = "0.1"
+chrono = "0.4"
+toml = "0.5"
+notify = "4.0"
+url = { version = "2.2", features = ["serde"] }
+pretty_env_logger = "0.4.0"
+handlebars = "3.5.4"
+sanitize-filename = "0.3.0"

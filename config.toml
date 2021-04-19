@@ -1,0 +1,21 @@
+# listen address
+#address = "0.0.0.0:3030"
+
+# path to put coverage reports to
+#reports_path = "../reports"
+
+# separate fuzzing will be performed on each of these branches
+#branches = ["master"]
+
+# path to a corpus directory
+# it should contain a directory for each target containing input files
+#corpus = "../corpus"
+
+# args passed to kcov executable
+#kcov.kcov_args = ["--include-pattern=path/to/code"] # to include only sources of the target program
+
+# run each specified target in the honggfuzz project
+#honggfuzz.project_name.targets = ["make_foo_from_bar"]
+
+# Report progress and results to the Slack channel
+#slack.channel = "XXXXXXXXXXX"

@@ -1,0 +1,84 @@
+address = "0.0.0.0:3030"
+
+reports_path = "./reports"
+
+branches = ["master", "develop", "fuzzing-ci-test"]
+corpus = "../corpus"
+
+[kcov]
+kcov_args = ["--include-pattern=code/tezedge"]
+
+[honggfuzz.tezos_messages_fuzzing]
+targets = [
+    "AckMessage_from_bytes",
+    "AdvertiseMessage_from_bytes",
+    "BinaryChunk_from_content",
+    "BlockHeader_from_bytes",
+    "BlockHeaderMessage_from_bytes",
+    "Component_from_bytes",
+    "ConnectionMessage_from_bytes",
+    "CurrentBranch_from_bytes",
+    "CurrentBranchMessage_from_bytes",
+    "CurrentHeadMessage_from_bytes",
+    "DeactivateMessage_from_bytes",
+    "GetBlockHeadersMessage_from_bytes",
+    "GetCurrentBranchMessage_from_bytes",
+    "GetCurrentHeadMessage_from_bytes",
+    "GetOperationsForBlocksMessage_from_bytes",
+    "GetOperationsMessage_from_bytes",
+    "GetProtocolsMessage_from_bytes",
+    "Mempool_from_bytes",
+    "MetadataMessage_from_bytes",
+    "NetworkVersion_from_bytes",
+    "Operation_from_bytes",
+    "OperationMessage_from_bytes",
+    "OperationsForBlock_from_bytes",
+    "OperationsForBlocksMessage_from_bytes",
+    "PeerMessageResponse_from_bytes",
+    "Protocol_from_bytes",
+    "ProtocolMessage_from_bytes",
+    "SwapMessage_from_bytes"
+]
+
+[honggfuzz.crypto_fuzzing]
+targets = [
+    "base58_from_base58check",
+    "base58_to_base58check",
+    "blake2b_digest_128",
+    "blake2b_digest_160",
+    "blake2b_digest_256",
+    "crypto_box_ProofOfWork_from_hex",
+    "crypto_box_PublicKey_from_hex",
+    "crypto_box_SecretKey_from_hex",
+    "crypto_Nonce_new",
+    "HashType_BlockHash_b58check_to_hash",
+    "HashType_BlockHash_bytes_and_string_convert",
+    "HashType_BlockHash_hash_to_b58check"
+]
+
+
+#[honggfuzz.rpc_fuzzing]
+#targets = [
+#    "parse_query_string"
+#,  "protocol_handler_test"
+#]
+
+[honggfuzz.storage_fuzzing]
+targets = [
+        "BlockHeaderWithHash_decode",
+        "ContextActionByBlockHashKey_decode",
+        "ContextActionByContractIndexKey_decode",
+        "ContextActionByTypeIndexKey_decode",
+        "Hash_decode",
+        "MempoolKey_decode",
+        "Meta_decode",
+        "MetaKey_decode",
+        "OperationKey_decode"
+]
+
+# coverage over the whole corpora
+[honggfuzz.cumulative_coverage_for_all_targets]
+targets = []
+
+[slack]
+channel = "C01TFMPCHB6"
