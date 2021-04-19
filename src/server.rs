@@ -238,8 +238,9 @@ async fn run_fuzzers<T: Feedback + Send + Sync + 'static>(
 fn get_run_id(commit: &Commit) -> String {
     let sanitize_options = sanitize_filename::Options {replacement: "_", ..Default::default()};
     let (id, _) = commit.id.split_at(5);
-    let msg = sanitize_filename::sanitize_with_options(&commit.message, sanitize_options);
-    format!("{} - {} by {}", msg, id, commit.author.username)
+    let message = commit.message.split('\n').next().unwrap();
+    let message = sanitize_filename::sanitize_with_options(&message, sanitize_options);
+    format!("{} - {} by {}", message, id, commit.author.username)
 }
 
 async fn push_hook(
