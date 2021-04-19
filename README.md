@@ -26,11 +26,33 @@ details)
 SLACK_AUTH_TOKEN="xoxb-XXXXXXX" cargo run -- -c config.toml server --url http://fuzz.example.com
 ```
 
+## HTTP Endpoints
+
+The application exposes two endpoints:
+
+- '/api' to work as a GitHub webhook.
+- '/reports' to serve static content of Kcov-generated reports.
+
 ## Configuration
 
 The program is controlled by a TOML configuration file. 
 
 See the [config.toml] file for the details on possible parameters.
+
+## Webhook Configuration
+
+To receive notifications from GitHub, a webhook should be added to the
+repository that we need to listen to (note that it might be a separate from the
+repository containing the fuzzing projects).
+
+Open the repository settings, select *Webhooks* item and press *Add webhook*.
+
+In the *Payload URL* enter the URL the app is accessible with, with `/api` path
+(e.g. http::/example.com:3030/run).
+
+In the *Content type* select *application/json*.
+
+Press *Add webhook*, and you're set.
 
 ## Slack Integration
 
