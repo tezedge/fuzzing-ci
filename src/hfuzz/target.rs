@@ -20,8 +20,8 @@ use crate::feedback::Feedback;
 pub struct Target<T> {
     name: String,
     dir: PathBuf,
+    hfuzz_run_args: String,
     ld_path: PathBuf,
-    corpus: Option<PathBuf>,
     feedback: Arc<T>,
     stop_bc: Sender<()>,
     log: Logger,
@@ -38,14 +38,19 @@ impl<T: Feedback + Send + Sync + 'static> Target<T> {
         log: Logger,
     ) -> Self {
         let name = name.into().into_owned();
+        let mut hfuzz_run_args = "-F 1048576".to_string(); // max input size
+        if let Some(corpus) = corpus {
+            hfuzz_run_args += &format!(" -i {}", corpus.to_string_lossy());
+        }
+        let ld_path = root
+                .as_ref()
+                .to_path_buf()
+                .join("tezos/sys/lib_tezos/artifacts/");
         Self {
             name,
             dir: dir.into().into_owned(),
-            ld_path: root
-                .as_ref()
-                .to_path_buf()
-                .join("tezos/sys/lib_tezos/artifacts/"),
-            corpus,
+            hfuzz_run_args,
+            ld_path,
             feedback,
             stop_bc,
             log,
@@ -54,10 +59,7 @@ impl<T: Feedback + Send + Sync + 'static> Target<T> {
 
     #[inline]
     fn hfuzz_run_base(&self, hfuzz_run_args: impl AsRef<str>) -> Command {
-        let mut hfuzz_run_args = String::from(hfuzz_run_args.as_ref());
-        if let Some(corpus) = &self.corpus {
-            hfuzz_run_args += &format!(" -i {}", corpus.to_string_lossy());
-        }
+        let hfuzz_run_args = format!("{} {}", hfuzz_run_args.as_ref(), self.hfuzz_run_args);
         let mut command = Command::new("cargo");
         command
             .args(&["hfuzz", "run"])
