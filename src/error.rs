@@ -4,6 +4,8 @@ use failure::Fail;
 pub enum Error {
     #[fail(display = "i/o error: {}", _0)]
     IOError(std::io::Error),
+    #[fail(display = "format error: {}", _0)]
+    FmtError(std::fmt::Error),
     #[fail(display = "url parse error: {}", _0)]
     UrlParseError(url::ParseError),
     #[fail(display = "toml deserialization error: {}", _0)]
@@ -19,6 +21,12 @@ pub enum Error {
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Self::IOError(error)
+    }
+}
+
+impl From<std::fmt::Error> for Error {
+    fn from(error: std::fmt::Error) -> Self {
+        Self::FmtError(error)
     }
 }
 

@@ -248,9 +248,9 @@ async fn create_feedback(
     let feedback = Feedback::new(
         &config.feedback,
         client,
-        config.reports_path.clone(),
-        config.url.clone(),
-        reports_loc,
+        &config.reports_path,
+        &config.url,
+        &reports_loc,
         log.clone(),
     )
     .await

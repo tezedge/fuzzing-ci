@@ -96,14 +96,14 @@ async fn main() {
         let corpus = matches.value_of_lossy("CORPUS");
         let targets = matches.values_of_lossy("TARGET").unwrap_or(vec![]);
         let feedback = &config.feedback;
-        let config = Honggfuzz::new(None, targets);
+        let hfuzz_config = Honggfuzz::new(None, targets);
         let client = LoggerClient::new("feedback".to_string(), log.clone());
         let feedback = Arc::new(
             Feedback::new(
                 feedback,
                 Box::new(client),
-                ".",
-                None,
+                &config.reports_path,
+                &config.url,
                 "reports",
                 log.clone(),
             )
@@ -111,9 +111,10 @@ async fn main() {
             .unwrap(),
         );
 
+        feedback.started();
         match hfuzz::run(
             dir,
-            config,
+            hfuzz_config,
             root,
             corpus.map(|s| s.into_owned()),
             feedback,

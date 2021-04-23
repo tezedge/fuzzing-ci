@@ -6,7 +6,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use reqwest::Url;
-use slog::{debug, error, info, o, trace, Logger};
+use slog::{error, info, o, trace, Logger};
 use tokio::sync::Notify;
 
 use crate::{
@@ -41,17 +41,16 @@ pub struct Feedback {
     client: Arc<Box<dyn FeedbackClient + Send + Sync>>,
     updater: Arc<ScheduledUpdater>,
     report: Arc<Report>,
-    reports_url: Option<Url>,
     log: Logger,
 }
 
 impl Feedback {
-    pub async fn new(
-        config: &config::Feedback,
+    pub async fn new<'a>(
+        config: &'a config::Feedback,
         client: Box<dyn FeedbackClient + Send + Sync>,
-        report_dir: impl AsRef<Path>,
-        reports_url: Option<Url>,
-        reports_loc: impl AsRef<str>,
+        reports_dir: impl AsRef<Path>,
+        reports_url: &'a Option<Url>,
+        reports_loc: impl AsRef<Path>,
         log: Logger,
     ) -> Result<Self, Error> {
         let client = Arc::new(client);
@@ -60,33 +59,14 @@ impl Feedback {
             Duration::from_secs(config.no_update_timeout),
             log.new(o!("role" => "updater")),
         );
-        let reports_dir = report_dir.as_ref().join(reports_loc.as_ref());
-        let reports_url = reports_url.map_or_else(
-            || Ok(None),
-            |u| {
-                u.join(&Self::report_loc_for_url(reports_loc.as_ref()))
-                    .map(Some)
-            },
-        )?;
-        let report = Report::new(reports_dir, log.new(o!("role" => "report"))).await?;
+        let report = Report::new(reports_dir.as_ref(), reports_url, reports_loc.as_ref(), log.new(o!("role" => "report"))).await?;
         Ok(Self {
             map: Arc::new(SharedFeedbackMap::new()),
             client,
             updater: Arc::new(updater),
             report: Arc::new(report),
-            reports_url,
             log,
         })
-    }
-
-    fn report_loc_for_url(loc: &str) -> String {
-        use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
-        let slash = loc.find('/').unwrap();
-        let (branch, rest) = loc.split_at(slash);
-        let (_, run) = rest.split_at(1);
-        let branch = percent_encode(branch.as_bytes(), NON_ALPHANUMERIC).to_string();
-        let run = percent_encode(run.as_bytes(), NON_ALPHANUMERIC).to_string();
-        format!("{}/{}", branch, run)
     }
 
     pub fn set_total(&self, target: &str, total: u32) {
@@ -104,37 +84,45 @@ impl Feedback {
         self.updater.update();
     }
 
+    fn update_text(time: &DateTime<Utc>) -> String {
+            let dur = Utc::now().signed_duration_since(time.clone());
+            format!(
+                "Last coverage update at {}, {}s ago",
+                time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                dur.num_seconds(),
+            )
+    }
+
     pub fn started(&self) {
         self.client.message("Fuzzing is started");
         let client = self.client.clone();
         let report = self.report.clone();
         let map = self.map.clone();
-        let reports_url = self.reports_url.clone();
         let log = self.log.clone();
-        self.updater.start(move |time| {
-            let dur = Utc::now().signed_duration_since(time.clone());
-            let mut message = format!(
-                "Last coverage update at {}, {}s ago",
-                time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                dur.num_seconds(),
-            );
-            if let Some(url) = &reports_url {
-                message = format!("{}\nReport is available at {}", message, url.to_string());
+        self.updater.start(move |time, update| {
+            if !update {
+                client.message(
+                    &format!("No coverage updates since {}",
+                             time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    )
+                );
+                return;
             }
-            client.message(&message);
+            let mut message = Self::update_text(time);
             let snap = map.snapshot();
             let report = report.clone();
+            let client = client.clone();
             let log = log.clone();
             tokio::spawn(async move {
-                if let Err(e) = report.update(&snap).await {
-                    error!(log, "Error updating progress report: {}", e);
-                } else {
-                    debug!(log, "Updated progress report");
+                match report.update(&snap).await {
+                    Ok(summary) => {
+                        message = format!("{}\n{}", message, summary);
+                    },
+                    Err(e) => {
+                        error!(log, "Error updating progress report: {}", e)
+                    }
                 }
-                report
-                    .generate_report(&snap)
-                    .await
-                    .expect("error generating report");
+                client.message(&message);
             });
         });
     }
@@ -207,7 +195,7 @@ impl ScheduledUpdater {
         }
     }
 
-    fn start<F: Fn(&DateTime<Utc>) + Send + Sync + 'static>(&self, f: F) {
+    fn start<F: Fn(&DateTime<Utc>, bool) + Send + Sync + 'static>(&self, f: F) {
         let update_timeout = self.update_timeout;
         let no_update_timeout = self.no_update_timeout;
         let updated = self.updated.clone();
@@ -216,16 +204,19 @@ impl ScheduledUpdater {
         let mut last_update = Utc::now();
         tokio::spawn(async move {
             let mut timeout = no_update_timeout;
+            let mut update = false;
             loop {
                 tokio::select! {
                     _ = tokio::time::sleep(timeout) => {
                         trace!(log, "Reporting");
-                        f(&last_update);
+                        f(&last_update, update);
+                        update = false;
                         timeout = no_update_timeout;
                     }
                     _ = updated.notified() => {
                         trace!(log, "New update, still waiting");
                         last_update = Utc::now();
+                        update = true;
                         timeout = update_timeout;
                     }
                     _ = stopped.notified() => {
