@@ -4,8 +4,10 @@ use failure::Fail;
 pub enum Error {
     #[fail(display = "i/o error: {}", _0)]
     IOError(std::io::Error),
-    #[fail(display = "deserialization error: {}", _0)]
+    #[fail(display = "toml deserialization error: {}", _0)]
     TomlDeError(toml::de::Error),
+    #[fail(display = "toml serialization error: {}", _0)]
+    TomlSerError(toml::ser::Error),
     #[fail(display = "JSON serialization error: {}", _0)]
     JsonError(serde_json::Error),
     #[fail(display = "Template substitution error: {}", _0)]
@@ -21,6 +23,12 @@ impl From<std::io::Error> for Error {
 impl From<toml::de::Error> for Error {
     fn from(error: toml::de::Error) -> Self {
         Self::TomlDeError(error)
+    }
+}
+
+impl From<toml::ser::Error> for Error {
+    fn from(error: toml::ser::Error) -> Self {
+        Self::TomlSerError(error)
     }
 }
 

@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    io,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -120,7 +119,7 @@ tr:nth-child(even) {
 </html>
 "#;
 
-const STATUS_FILE: &str = "status.json";
+const STATUS_FILE: &str = "status.toml";
 const REPORT_FILE: &str = "report.html";
 
 pub struct Report {
@@ -169,7 +168,10 @@ impl Report {
         };
         let mut latest: Option<(PathBuf, SystemTime)> = None;
         while let Some(entry) = read_dir.next_entry().await? {
-            if entry.file_type().await?.is_dir() && entry.path() != current.as_ref() {
+            if entry.file_type().await?.is_dir()
+                && entry.path() != current.as_ref()
+                && entry.path().join(STATUS_FILE).exists()
+            {
                 let (path, created) = (entry.path(), entry.metadata().await?.created()?);
                 if let Some(ref latest) = latest {
                     if latest.1 > created {
@@ -183,18 +185,28 @@ impl Report {
         Ok(latest.map(|o| o.0))
     }
 
+    fn serialize(status: &FuzzingStatus) -> Result<Vec<u8>, Error> {
+        //serde_json::to_vec_pretty(&status)
+        Ok(toml::to_vec(status)?)
+    }
+
+    fn deserialize(bytes: &[u8]) -> Result<FuzzingStatus, Error> {
+        //serde_json::from_slice(bytes)
+        Ok(toml::from_slice(bytes)?)
+    }
+
     async fn save(status: &FuzzingStatus, file: impl AsRef<Path>) -> Result<(), Error> {
         File::create(file)
             .await?
-            .write_all(&serde_json::to_vec_pretty(&status)?)
+            .write_all(&Self::serialize(status)?)
             .await?;
         Ok(())
     }
 
-    async fn load(file: impl AsRef<Path>) -> io::Result<FuzzingStatus> {
+    async fn load(file: impl AsRef<Path>) -> Result<FuzzingStatus, Error> {
         let mut json = vec![];
         File::open(file).await?.read_to_end(&mut json).await?;
-        Ok(serde_json::from_slice(&json)?)
+        Ok(Self::deserialize(&json)?)
     }
 
     pub async fn update(&self, status: &FuzzingStatus) -> Result<(), Error> {
