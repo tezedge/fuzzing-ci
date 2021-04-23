@@ -216,7 +216,13 @@ fn get_run_id(commit: &Commit) -> String {
     let (id, _) = commit.id.split_at(5);
     let message = commit.message.split('\n').next().unwrap();
     let message = sanitize_filename::sanitize_with_options(&message, sanitize_options);
-    format!("{} - {} by {}", message, id, commit.author.username)
+    format!(
+        "{} - {} by {} at {}",
+        message,
+        id,
+        commit.author.username,
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    )
 }
 
 async fn create_feedback(
@@ -228,12 +234,7 @@ async fn create_feedback(
 ) -> Arc<Feedback> {
     let reports_loc = format!("{}/{}/", branch.as_ref(), run_id.as_ref());
 
-    let desc = format!(
-        "Branch _{}_, commit {}, started at {}",
-        branch.as_ref(),
-        run_id.as_ref(),
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-    );
+    let desc = format!("Branch _{}_, {}", branch.as_ref(), run_id.as_ref(),);
     let client: Box<dyn FeedbackClient + Sync + Send> = if let Some(config) = &config.slack {
         Box::new(SlackClient::new(
             desc,
