@@ -500,6 +500,7 @@ dependencies = [
  "handlebars",
  "lazy_static",
  "notify",
+ "percent-encoding",
  "pretty_env_logger",
  "reqwest",
  "sanitize-filename",

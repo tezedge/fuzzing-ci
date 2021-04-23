@@ -130,7 +130,10 @@ pub struct Report {
 
 impl Report {
     pub async fn new(dir: impl AsRef<Path>, log: Logger) -> Result<Self, Error> {
-        let current = dir.as_ref().canonicalize()?;
+        let current = dir.as_ref().to_path_buf();
+        if !current.exists() {
+            tokio::fs::create_dir_all(&current).await?;
+        }
         info!(
             log,
             "Initializing reporting in {}",

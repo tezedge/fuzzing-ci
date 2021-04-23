@@ -61,8 +61,13 @@ impl Feedback {
             log.new(o!("role" => "updater")),
         );
         let reports_dir = report_dir.as_ref().join(reports_loc.as_ref());
-        let reports_url =
-            reports_url.map_or_else(|| Ok(None), |u| u.join(reports_loc.as_ref()).map(Some))?;
+        let reports_url = reports_url.map_or_else(
+            || Ok(None),
+            |u| {
+                u.join(&Self::report_loc_for_url(reports_loc.as_ref()))
+                    .map(Some)
+            },
+        )?;
         let report = Report::new(reports_dir, log.new(o!("role" => "report"))).await?;
         Ok(Self {
             map: Arc::new(SharedFeedbackMap::new()),
@@ -72,6 +77,16 @@ impl Feedback {
             reports_url,
             log,
         })
+    }
+
+    fn report_loc_for_url(loc: &str) -> String {
+        use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
+        let slash = loc.find('/').unwrap();
+        let (branch, rest) = loc.split_at(slash);
+        let (_, run) = rest.split_at(1);
+        let branch = percent_encode(branch.as_bytes(), NON_ALPHANUMERIC).to_string();
+        let run = percent_encode(run.as_bytes(), NON_ALPHANUMERIC).to_string();
+        format!("{}/{}", branch, run)
     }
 
     pub fn set_total(&self, target: &str, total: u32) {
