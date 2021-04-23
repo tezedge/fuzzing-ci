@@ -23,7 +23,7 @@ pub fn reports_url(reports_url: &Url, rel_path: &Path) -> Result<Url, Error> {
     //    assert!(rel_path.)
     let mut reports_url = reports_url.clone();
     for segment in rel_path {
-        reports_url = reports_url.join(&sanitize_url_path_segment(segment))?
+        reports_url = reports_url.join(&(sanitize_url_path_segment(segment) + "/"))?
     }
     Ok(reports_url)
 }
