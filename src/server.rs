@@ -299,6 +299,7 @@ async fn push_hook(
         let reports_path = PathBuf::from(&config.reports_path).join(reports_loc);
 
         let feedback = create_feedback(&config, &branch, &run_id, &stop_bc, &log).await;
+        feedback.message("Preparing for fuzzing".to_string());
         trace!(log, "Spawning fuzzer");
         tokio::spawn(async move {
             let mut stop = stop_bc.subscribe();

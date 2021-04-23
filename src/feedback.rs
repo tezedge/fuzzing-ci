@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub trait FeedbackClient {
-    fn message(&self, message: String);
+    fn message(&self, message: &str);
 }
 
 pub struct LoggerClient {
@@ -31,7 +31,7 @@ impl LoggerClient {
 }
 
 impl FeedbackClient for LoggerClient {
-    fn message(&self, message: String) {
+    fn message(&self, message: &str) {
         info!(self.log, "{}", message; "client" => &self.id);
     }
 }
@@ -90,7 +90,7 @@ impl Feedback {
     }
 
     pub fn started(&self) {
-        self.client.message("Fuzzing is started".to_string());
+        self.client.message("Fuzzing is started");
         let client = self.client.clone();
         let report = self.report.clone();
         let map = self.map.clone();
@@ -106,7 +106,7 @@ impl Feedback {
             if let Some(url) = &reports_url {
                 message = format!("{}\nReport is available at {}", message, url.to_string());
             }
-            client.message(message);
+            client.message(&message);
             let snap = map.snapshot();
             let report = report.clone();
             let log = log.clone();
@@ -125,12 +125,12 @@ impl Feedback {
     }
 
     pub fn stopped(&self) {
-        self.client.message("Fuzzing is stopped".to_string());
+        self.client.message("Fuzzing is stopped");
         self.updater.stop();
     }
 
-    pub fn message(&self, msg: String) {
-        self.client.message(msg);
+    pub fn message(&self, msg: impl AsRef<str>) {
+        self.client.message(msg.as_ref());
     }
 }
 

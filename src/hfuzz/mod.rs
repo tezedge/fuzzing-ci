@@ -53,7 +53,6 @@ pub async fn run(
     log: Logger,
 ) -> io::Result<()> {
     info!(log, "Starting hfuzz"; "dir" => dir.as_ref().to_str());
-    feedback.started();
 
     let mut handles = vec![];
 
@@ -78,7 +77,6 @@ pub async fn run(
             Ok(Ok(_)) => (),
         }
     }
-    feedback.stopped();
 
     Ok(())
 }

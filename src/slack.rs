@@ -15,7 +15,7 @@ pub struct SlackClient {
 }
 
 impl FeedbackClient for SlackClient {
-    fn message(&self, message: String) {
+    fn message(&self, message: &str) {
         let message = format!("{}: {}", self.desc, message);
         let token = self.token.clone();
         let log = self.log.clone();
