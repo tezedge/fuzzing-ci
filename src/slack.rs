@@ -8,6 +8,7 @@ use crate::feedback::FeedbackClient;
 const POST_MESSAGE_URL: &str = "https://slack.com/api/chat.postMessage";
 
 pub struct SlackClient {
+    desc: String,
     channel: String,
     token: String,
     log: Logger,
@@ -15,6 +16,7 @@ pub struct SlackClient {
 
 impl FeedbackClient for SlackClient {
     fn message(&self, message: String) {
+        let message = format!("{}: {}", self.desc, message);
         let token = self.token.clone();
         let log = self.log.clone();
         let json = self.message_json(&message);
@@ -51,8 +53,14 @@ impl FeedbackClient for SlackClient {
 }
 
 impl SlackClient {
-    pub fn new(channel: impl AsRef<str>, token: impl AsRef<str>, log: Logger) -> Self {
+    pub fn new(
+        desc: impl AsRef<str>,
+        channel: impl AsRef<str>,
+        token: impl AsRef<str>,
+        log: Logger,
+    ) -> Self {
         Self {
+            desc: desc.as_ref().into(),
             channel: channel.as_ref().into(),
             token: token.as_ref().into(),
             log,

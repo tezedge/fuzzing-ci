@@ -220,22 +220,23 @@ fn get_run_id(commit: &Commit) -> String {
 }
 
 async fn create_feedback(
-    feedback_config: &config::Feedback,
-    slack_config: &Option<config::Slack>,
+    config: &config::Config,
     branch: impl AsRef<str>,
     run_id: impl AsRef<str>,
-    reports: impl AsRef<Path>,
     stop_bc: &Sender<()>,
     log: &Logger,
 ) -> Arc<Feedback> {
+    let reports_loc = format!("{}/{}/", branch.as_ref(), run_id.as_ref());
+
     let desc = format!(
         "Branch _{}_, commit {}, started at {}",
         branch.as_ref(),
         run_id.as_ref(),
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
     );
-    let client: Box<dyn FeedbackClient + Sync + Send> = if let Some(config) = slack_config {
+    let client: Box<dyn FeedbackClient + Sync + Send> = if let Some(config) = &config.slack {
         Box::new(SlackClient::new(
+            desc,
             &config.channel,
             &config.token,
             log.clone(),
@@ -243,9 +244,16 @@ async fn create_feedback(
     } else {
         Box::new(LoggerClient::new(desc, log.clone()))
     };
-    let feedback = Feedback::new(feedback_config, client, reports, log.clone())
-        .await
-        .expect("can't create feedback");
+    let feedback = Feedback::new(
+        &config.feedback,
+        client,
+        config.reports_path.clone(),
+        config.url.clone(),
+        reports_loc,
+        log.clone(),
+    )
+    .await
+    .expect("can't create feedback");
     let feedback = Arc::new(feedback);
     {
         let feedback = feedback.clone();
@@ -288,18 +296,9 @@ async fn push_hook(
         };
 
         let reports_loc = format!("{}/{}/", branch, run_id);
-        let reports_path = PathBuf::from(&config.reports_path).join(&reports_loc);
+        let reports_path = PathBuf::from(&config.reports_path).join(reports_loc);
 
-        let feedback = create_feedback(
-            &config.feedback,
-            &config.slack,
-            &branch,
-            &run_id,
-            &reports_path,
-            &stop_bc,
-            &log,
-        )
-        .await;
+        let feedback = create_feedback(&config, &branch, &run_id, &stop_bc, &log).await;
         trace!(log, "Spawning fuzzer");
         tokio::spawn(async move {
             let mut stop = stop_bc.subscribe();

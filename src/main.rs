@@ -99,9 +99,16 @@ async fn main() {
         let config = Honggfuzz::new(None, targets);
         let client = LoggerClient::new("feedback".to_string(), log.clone());
         let feedback = Arc::new(
-            Feedback::new(feedback, Box::new(client), ".", log.clone())
-                .await
-                .unwrap(),
+            Feedback::new(
+                feedback,
+                Box::new(client),
+                ".",
+                None,
+                "reports",
+                log.clone(),
+            )
+            .await
+            .unwrap(),
         );
 
         match hfuzz::run(

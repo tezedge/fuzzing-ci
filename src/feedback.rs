@@ -5,6 +5,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
+use reqwest::Url;
 use slog::{debug, error, info, o, trace, Logger};
 use tokio::sync::Notify;
 
@@ -40,6 +41,7 @@ pub struct Feedback {
     client: Arc<Box<dyn FeedbackClient + Send + Sync>>,
     updater: Arc<ScheduledUpdater>,
     report: Arc<Report>,
+    reports_url: Option<Url>,
     log: Logger,
 }
 
@@ -48,6 +50,8 @@ impl Feedback {
         config: &config::Feedback,
         client: Box<dyn FeedbackClient + Send + Sync>,
         report_dir: impl AsRef<Path>,
+        reports_url: Option<Url>,
+        reports_loc: impl AsRef<str>,
         log: Logger,
     ) -> Result<Self, Error> {
         let client = Arc::new(client);
@@ -56,12 +60,16 @@ impl Feedback {
             Duration::from_secs(config.no_update_timeout),
             log.new(o!("role" => "updater")),
         );
-        let report = Report::new(report_dir, log.new(o!("role" => "report"))).await?;
+        let reports_dir = report_dir.as_ref().join(reports_loc.as_ref());
+        let reports_url =
+            reports_url.map_or_else(|| Ok(None), |u| u.join(reports_loc.as_ref()).map(Some))?;
+        let report = Report::new(reports_dir, log.new(o!("role" => "report"))).await?;
         Ok(Self {
             map: Arc::new(SharedFeedbackMap::new()),
             client,
             updater: Arc::new(updater),
             report: Arc::new(report),
+            reports_url,
             log,
         })
     }
@@ -86,12 +94,19 @@ impl Feedback {
         let client = self.client.clone();
         let report = self.report.clone();
         let map = self.map.clone();
+        let reports_url = self.reports_url.clone();
         let log = self.log.clone();
         self.updater.start(move |time| {
-            client.message(format!(
-                "Last coverage update at {}",
-                time.format("%Y-%m-%d %H:%M:%S").to_string()
-            ));
+            let dur = Utc::now().signed_duration_since(time.clone());
+            let mut message = format!(
+                "Last coverage update at {}, {}s ago",
+                time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                dur.num_seconds(),
+            );
+            if let Some(url) = &reports_url {
+                message = format!("{}\nReport is available at {}", message, url.to_string());
+            }
+            client.message(message);
             let snap = map.snapshot();
             let report = report.clone();
             let log = log.clone();

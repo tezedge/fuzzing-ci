@@ -119,8 +119,8 @@ tr:nth-child(even) {
 </html>
 "#;
 
-const STATUS_FILE: &str = "status.toml";
-const REPORT_FILE: &str = "report.html";
+const STATUS_FILE: &str = "hfuzz-status.toml";
+const REPORT_FILE: &str = "hfuzz-report/index.html";
 
 pub struct Report {
     current: PathBuf,
@@ -229,15 +229,17 @@ impl Report {
     }
 
     pub async fn generate_report(&self, status: &FuzzingStatus) -> Result<(), Error> {
+        let path = self.current.join(REPORT_FILE);
         debug!(
             self.log,
             "Generating coverage report in {}",
-            self.current.join(REPORT_FILE).to_string_lossy()
+            path.to_string_lossy()
         );
         let mut diff: Vec<TargetStatusDiff> =
             status.iter().map(|(k, s)| self.get_diff(k, s)).collect();
         diff.sort_by(|a, b| a.name.cmp(&b.name));
         let report = HANDLEBARS.render("report", &diff)?;
+        std::fs::create_dir_all(path.parent().unwrap())?;
         File::create(self.current.join(REPORT_FILE))
             .await?
             .write_all(report.as_bytes())
