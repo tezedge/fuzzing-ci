@@ -17,9 +17,9 @@ use warp::Filter;
 
 use crate::{
     build::Builder,
-    config::{Config, Slack},
-    feedback::Feedback,
-    slack::SlackFeedback,
+    config::{self, Config},
+    feedback::{Feedback, FeedbackClient, LoggerClient},
+    slack::SlackClient,
 };
 
 const RUN_PATH: &str = "run";
@@ -87,39 +87,6 @@ fn get_stop_bc(
     notify
 }
 
-async fn create_slack_feedback(
-    slack: Slack,
-    branch: &String,
-    run_id: &String,
-    stop_bc: Sender<()>,
-    log: &Logger,
-) -> io::Result<Arc<SlackFeedback>> {
-    trace!(log, "Setting up Slack notifications");
-    let feedback = SlackFeedback::start(slack, log.clone()).await?;
-    let feedback = Arc::new(feedback);
-    let description = format!(
-        "Branch _{}_, commit {}, started at {}",
-        branch,
-        run_id,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
-    );
-    feedback.started(description);
-
-    {
-        let mut stop = stop_bc.subscribe();
-        let feedback = feedback.clone();
-        let log = log.clone();
-        tokio::spawn(async move {
-            if let Err(e) = stop.recv().await {
-                error!(log, "Error receiving broadcast"; "error" => e.to_string());
-            }
-            feedback.stopped();
-        });
-    }
-
-    Ok(feedback)
-}
-
 async fn copy_cov_files(
     src: impl AsRef<Path>,
     dst: impl AsRef<Path>,
@@ -147,13 +114,14 @@ async fn copy_cov_files(
     Ok(())
 }
 
-async fn run_fuzzers<T: Feedback + Send + Sync + 'static>(
+async fn run_fuzzers(
     url: String,
     branch: String,
     run_id: String,
     builder: Arc<Mutex<Builder>>,
     config: Config,
-    feedback: Arc<T>,
+    feedback: Arc<Feedback>,
+    reports_path: impl AsRef<Path>,
     stop_bc: Sender<()>,
     log: Logger,
 ) -> io::Result<()> {
@@ -162,10 +130,7 @@ async fn run_fuzzers<T: Feedback + Send + Sync + 'static>(
     let path = tempdir.path();
     super::checkout::checkout(path, url, &branch, log.new(slog::o!("stage" => "checkout"))).await?;
     let mut handles = vec![];
-    let reports_loc = format!("{}/{}/", branch, run_id);
     let tezedge_root = tempdir.path().to_path_buf().join("code/tezedge");
-
-    let reports_path = PathBuf::from(&config.reports_path).join(&reports_loc);
 
     if config.kcov.is_some() {
         debug!(log, "Generating coverage reports");
@@ -177,7 +142,10 @@ async fn run_fuzzers<T: Feedback + Send + Sync + 'static>(
 
             match builder.kcov(&tezedge_root, &path).await {
                 Ok(_) => {
-                    if let Err(e) = copy_cov_files(&path, reports_path.join(&name), &log).await {
+                    if let Err(e) =
+                        copy_cov_files(&path, reports_path.as_ref().to_path_buf().join(&name), &log)
+                            .await
+                    {
                         error!(log, "Error copying reports: {}", e);
                     } else {
                         some = true;
@@ -191,7 +159,11 @@ async fn run_fuzzers<T: Feedback + Send + Sync + 'static>(
         if some {
             feedback.message(format!(
                 "Coverage reports are ready: {}",
-                config.url.unwrap().join(&reports_loc).unwrap()
+                config
+                    .url
+                    .unwrap()
+                    .join(&format!("{}/{}", branch, run_id))
+                    .unwrap()
             ));
         }
     }
@@ -217,6 +189,7 @@ async fn run_fuzzers<T: Feedback + Send + Sync + 'static>(
             super::hfuzz::run(path, conf, tezedge_root, corpus, feedback, stop_bc, log).await
         }));
     }
+    feedback.started();
     for handle in handles {
         match handle.await {
             Ok(r) => match r {
@@ -236,11 +209,56 @@ async fn run_fuzzers<T: Feedback + Send + Sync + 'static>(
 }
 
 fn get_run_id(commit: &Commit) -> String {
-    let sanitize_options = sanitize_filename::Options {replacement: "_", ..Default::default()};
+    let sanitize_options = sanitize_filename::Options {
+        replacement: "_",
+        ..Default::default()
+    };
     let (id, _) = commit.id.split_at(5);
     let message = commit.message.split('\n').next().unwrap();
     let message = sanitize_filename::sanitize_with_options(&message, sanitize_options);
     format!("{} - {} by {}", message, id, commit.author.username)
+}
+
+async fn create_feedback(
+    feedback_config: &config::Feedback,
+    slack_config: &Option<config::Slack>,
+    branch: impl AsRef<str>,
+    run_id: impl AsRef<str>,
+    reports: impl AsRef<Path>,
+    stop_bc: &Sender<()>,
+    log: &Logger,
+) -> Arc<Feedback> {
+    let desc = format!(
+        "Branch _{}_, commit {}, started at {}",
+        branch.as_ref(),
+        run_id.as_ref(),
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    );
+    let client: Box<dyn FeedbackClient + Sync + Send> = if let Some(config) = slack_config {
+        Box::new(SlackClient::new(
+            &config.channel,
+            &config.token,
+            log.clone(),
+        ))
+    } else {
+        Box::new(LoggerClient::new(desc, log.clone()))
+    };
+    let feedback = Feedback::new(feedback_config, client, reports, log.clone())
+        .await
+        .expect("can't create feedback");
+    let feedback = Arc::new(feedback);
+    {
+        let feedback = feedback.clone();
+        let mut stop = stop_bc.subscribe();
+        let log = log.clone();
+        tokio::spawn(async move {
+            if let Err(e) = stop.recv().await {
+                error!(log, "Error receiving broadcast"; "error" => e.to_string());
+            }
+            feedback.stopped();
+        });
+    }
+    feedback
 }
 
 async fn push_hook(
@@ -269,21 +287,24 @@ async fn push_hook(
             "no commit".to_string()
         };
 
-        let feedback =
-            match create_slack_feedback(config.slack.clone(), &branch, &run_id, stop_bc.clone(), &log).await
-            {
-                Ok(f) => f,
-                Err(e) => {
-                    error!(log, "Error setting up Slack notifications"; "error" => e);
-                    return Err(warp::reject());
-                }
-            };
+        let reports_loc = format!("{}/{}/", branch, run_id);
+        let reports_path = PathBuf::from(&config.reports_path).join(&reports_loc);
 
+        let feedback = create_feedback(
+            &config.feedback,
+            &config.slack,
+            &branch,
+            &run_id,
+            &reports_path,
+            &stop_bc,
+            &log,
+        )
+        .await;
         trace!(log, "Spawning fuzzer");
         tokio::spawn(async move {
             let mut stop = stop_bc.subscribe();
             tokio::select! {
-                res = run_fuzzers(url, branch, run_id, builder, config, feedback, stop_bc.clone(), log.clone()) => {
+                res = run_fuzzers(url, branch, run_id, builder, config, feedback, reports_path, stop_bc.clone(), log.clone()) => {
                     match res {
                         Ok(_) => (),
                         Err(e) => error!(log, "Error running fuzzers"; "error" => e),

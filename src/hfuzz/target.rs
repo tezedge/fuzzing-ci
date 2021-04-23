@@ -17,23 +17,23 @@ use tokio::{
 
 use crate::feedback::Feedback;
 
-pub struct Target<T> {
+pub struct Target {
     name: String,
     dir: PathBuf,
     hfuzz_run_args: String,
     ld_path: PathBuf,
-    feedback: Arc<T>,
+    feedback: Arc<Feedback>,
     stop_bc: Sender<()>,
     log: Logger,
 }
 
-impl<T: Feedback + Send + Sync + 'static> Target<T> {
+impl Target {
     pub fn new<'a>(
         name: impl Into<Cow<'a, str>>,
         dir: impl Into<Cow<'a, Path>>,
         root: impl AsRef<Path>,
         corpus: Option<PathBuf>,
-        feedback: Arc<T>,
+        feedback: Arc<Feedback>,
         stop_bc: Sender<()>,
         log: Logger,
     ) -> Self {
@@ -43,9 +43,9 @@ impl<T: Feedback + Send + Sync + 'static> Target<T> {
             hfuzz_run_args += &format!(" -i {}", corpus.to_string_lossy());
         }
         let ld_path = root
-                .as_ref()
-                .to_path_buf()
-                .join("tezos/sys/lib_tezos/artifacts/");
+            .as_ref()
+            .to_path_buf()
+            .join("tezos/sys/lib_tezos/artifacts/");
         Self {
             name,
             dir: dir.into().into_owned(),
@@ -69,6 +69,8 @@ impl<T: Feedback + Send + Sync + 'static> Target<T> {
             .env("LD_LIBRARY_PATH", &self.ld_path)
             .env("HFUZZ_RUN_ARGS", hfuzz_run_args);
 
+        trace!(self.log, "hfuzz command: {:?}", command);
+
         command
     }
 
@@ -84,13 +86,14 @@ impl<T: Feedback + Send + Sync + 'static> Target<T> {
 
     async fn filter_output(
         name: String,
-        feedback: Arc<T>,
+        feedback: Arc<Feedback>,
         mut read: (impl AsyncBufRead + Unpin + Send),
         log: Logger,
     ) {
         let mut edges = 0;
         let mut line = String::new();
         while {
+            line.clear();
             match read.read_line(&mut line).await {
                 Ok(s) => s,
                 Err(e) => {
@@ -108,6 +111,7 @@ impl<T: Feedback + Send + Sync + 'static> Target<T> {
                         break;
                     }
                 };
+
                 if e == "0" {
                     continue;
                 }
@@ -122,7 +126,6 @@ impl<T: Feedback + Send + Sync + 'static> Target<T> {
                 edges += e;
                 trace!(log, "coverage update"; "edges" => edges);
             }
-            line.clear();
         }
     }
 

@@ -1,41 +1,62 @@
-use std::{borrow::Cow, collections::HashMap, fmt::Write, io, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashMap, io};
 
 use reqwest::header::AUTHORIZATION;
-use slog::{error, o, trace, warn, Logger};
-use tokio::sync::Notify;
+use slog::{error, trace, warn, Logger};
 
-use crate::{
-    config::Slack,
-    feedback::{Feedback, SharedFeedbackMap},
-};
+use crate::feedback::FeedbackClient;
 
 const POST_MESSAGE_URL: &str = "https://slack.com/api/chat.postMessage";
 
-pub struct SlackFeedback {
+pub struct SlackClient {
     channel: String,
     token: String,
-    map: SharedFeedbackMap,
-    updater: ScheduledUpdater,
     log: Logger,
 }
 
-#[derive(serde::Deserialize, Debug)]
-pub struct JsonResponse {
-    ok: bool,
-    warning: Option<String>,
-    error: Option<String>,
+impl FeedbackClient for SlackClient {
+    fn message(&self, message: String) {
+        let token = self.token.clone();
+        let log = self.log.clone();
+        let json = self.message_json(&message);
+        tokio::spawn(async move {
+            trace!(log, "Sending to slack"; "text" => &message);
+            let client = reqwest::Client::new();
+            let response = client
+                .post(POST_MESSAGE_URL)
+                .header(AUTHORIZATION, token)
+                .json(&json)
+                .send()
+                .await
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
+                .json::<JsonResponse>()
+                .await
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+            trace!(log, "Sent to slack"; "response" => format!("{:?}", response));
+
+            if response.ok {
+                if let Some(warn) = response.warning {
+                    if warn != "missing_charset" {
+                        warn!(log, "Posting message"; "warning" => warn);
+                    }
+                }
+                Ok(())
+            } else {
+                let error = response.error.unwrap_or("unknown error".to_string());
+                error!(log, "Posting message"; "error" => &error);
+                Err(io::Error::new(io::ErrorKind::Other, error))
+            }
+        });
+    }
 }
 
-impl SlackFeedback {
-    pub async fn start(config: Slack, log: Logger) -> io::Result<Self> {
-        let meself = SlackFeedback {
-            channel: config.channel,
-            token: format!("Bearer {}", config.token),
-            map: SharedFeedbackMap::new(),
-            updater: ScheduledUpdater::new(log.clone()),
+impl SlackClient {
+    pub fn new(channel: impl AsRef<str>, token: impl AsRef<str>, log: Logger) -> Self {
+        Self {
+            channel: channel.as_ref().into(),
+            token: token.as_ref().into(),
             log,
-        };
-        Ok(meself)
+        }
     }
 
     fn message_json<'a>(&self, text: impl Into<Cow<'a, str>>) -> HashMap<String, String> {
@@ -47,38 +68,27 @@ impl SlackFeedback {
         .map(|(k, v)| (k.to_string(), v.clone()))
         .collect()
     }
+}
 
-    async fn send_message(&self, text: impl AsRef<str>) -> io::Result<()> {
-        trace!(self.log, "Sending to slack"; "text" => text.as_ref());
-        let client = reqwest::Client::new();
-        let response = client
-            .post(POST_MESSAGE_URL)
-            .header(AUTHORIZATION, &self.token)
-            .json(&self.message_json(text.as_ref()))
-            .send()
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
-            .json::<JsonResponse>()
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+#[derive(serde::Deserialize, Debug)]
+pub struct JsonResponse {
+    ok: bool,
+    warning: Option<String>,
+    error: Option<String>,
+}
 
-        trace!(self.log, "Sent to slack"; "response" => format!("{:?}", response));
-
-        if response.ok {
-            if let Some(warn) = response.warning {
-                if warn != "missing_charset" {
-                    warn!(self.log, "Posting message"; "warning" => warn);
-                }
-            }
-            Ok(())
-        } else {
-            let error = response.error.unwrap_or("unknown error".to_string());
-            error!(self.log, "Posting message"; "error" => &error);
-            Err(io::Error::new(io::ErrorKind::Other, error))
-        }
+/*
+impl SlackFeedback {
+    pub async fn start(config: &Slack, log: Logger) -> io::Result<Self> {
+        let meself = SlackFeedback {
+            client: Arc::new(SlackClient::new(&config.channel, &format!("Bearer {}", config.token), log.clone())),
+            map: Arc::new(SharedFeedbackMap::new()),
+            updater: ScheduledUpdater::new(log.clone()),
+        };
+        Ok(meself)
     }
 
-    fn report(self: &Arc<Self>, description: &String) {
+    fn report(&self, description: &String) {
         let mut table = self.map.as_table();
         table.sort_by(|a, b| a.0.cmp(&b.0));
         let mut r = String::new();
@@ -91,10 +101,10 @@ impl SlackFeedback {
             )
             .unwrap();
         }
-        let meself = self.clone();
+        let client = self.client.clone();
         tokio::spawn(async move {
-            if let Err(e) = meself.send_message(r).await {
-                error!(meself.log, "Can't send a message to slack"; "error" => e);
+            if let Err(e) = client.send_message(r).await {
+                error!(client.log, "Can't send a message to slack"; "error" => e);
             }
         });
     }
@@ -104,37 +114,34 @@ const DURATION_SHORT: Duration = Duration::from_secs(60);
 const DURATION_LONG: Duration = Duration::from_secs(3600);
 
 impl Feedback for SlackFeedback {
-    fn set_total(self: &Arc<Self>, target: impl AsRef<str>, total: u32) {
+    fn set_total(&self, target: &str, total: u32) {
         self.map.set_total(target, total);
         self.updater.update();
     }
 
-    fn add_covered(self: &Arc<Self>, target: impl AsRef<str>, covered: u32) {
+    fn add_covered(&self, target: &str, covered: u32) {
         self.map.add_covered(target, covered);
         self.updater.update();
     }
 
-    fn add_errors(self: &Arc<Self>, target: impl AsRef<str>, errors: u32) {
+    fn add_errors(&self, target: &str, errors: u32) {
         self.map.add_errors(target, errors);
         self.updater.update();
     }
 
-    fn started(self: &Arc<Self>, description: String) {
-        let meself = self.clone();
-        let desc = description.clone();
-        self.updater
-            .start(description, move || meself.report(&desc));
+    fn started(&self, description: String) {
+        self.message(format!("Started {}", description));
     }
 
-    fn stopped(self: &Arc<Self>) {
+    fn stopped(&self) {
         self.updater.stop();
     }
 
-    fn message(self: &Arc<Self>, msg: String) {
-        let meself = self.clone();
+    fn message(&self, msg: String) {
+        let client = self.client.clone();
         tokio::spawn(async move {
-            if let Err(e) = meself.send_message(msg).await {
-                error!(meself.log, "Can't send a message to slack"; "error" => e);
+            if let Err(e) = client.send_message(msg).await {
+                error!(client.log, "Can't send a message to slack"; "error" => e);
             }
         });
     }
@@ -189,3 +196,5 @@ impl ScheduledUpdater {
         self.updated.notify_one();
     }
 }
+
+*/

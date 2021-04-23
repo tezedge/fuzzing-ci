@@ -4,14 +4,17 @@ use std::sync::Arc;
 
 use config::Honggfuzz;
 
-use slog::{crit, debug, error, o};
+use feedback::{Feedback, LoggerClient};
+use slog::{crit, debug, error};
 use tokio::sync::broadcast::channel;
 
 mod build;
 mod checkout;
 mod config;
+mod error;
 mod feedback;
 mod hfuzz;
+mod report;
 mod server;
 mod slack;
 
@@ -35,7 +38,7 @@ async fn main() {
             (about: "runs hfuzz")
             (@arg DIR: +required "Directory containing honggfuzz project")
             (@arg TEZEDGE: +required "Directory containing tezedge project")
-            (@arg CORPUS: +required "Directory containing honggfuzz corpus")
+            (@arg CORPUS: -c --corpus "Directory containing honggfuzz corpus")
             (@arg TARGET: ... "Targets to fuzz")
         )
         (@subcommand slack =>
@@ -74,7 +77,7 @@ async fn main() {
     let mut config = match config::Config::read(config) {
         Ok(c) => c,
         Err(e) => {
-            crit!(log, "Failed to read configuration file {}", config; "error" => e);
+            crit!(log, "Failed to read configuration file {}", config; "error" => e.to_string());
             return;
         }
     };
@@ -92,16 +95,21 @@ async fn main() {
         let root = matches.value_of_os("TEZEDGE").unwrap();
         let corpus = matches.value_of_lossy("CORPUS");
         let targets = matches.values_of_lossy("TARGET").unwrap_or(vec![]);
+        let feedback = &config.feedback;
         let config = Honggfuzz::new(None, targets);
+        let client = LoggerClient::new("feedback".to_string(), log.clone());
+        let feedback = Arc::new(
+            Feedback::new(feedback, Box::new(client), ".", log.clone())
+                .await
+                .unwrap(),
+        );
 
         match hfuzz::run(
             dir,
             config,
             root,
             corpus.map(|s| s.into_owned()),
-            Arc::new(feedback::LoggerFeedback::new(
-                log.new(o!("role" => "feedback")),
-            )),
+            feedback,
             channel(1).0,
             log.new(slog::o!()),
         )

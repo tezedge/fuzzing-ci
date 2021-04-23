@@ -43,16 +43,17 @@ async fn _find_reports(path: &impl AsRef<Path>, log: &Logger) -> io::Result<Vec<
     Ok(result)
 }
 
-pub async fn run<T: Feedback + Send + Sync + 'static>(
+pub async fn run(
     dir: impl AsRef<Path>,
     config: Honggfuzz,
     root: impl AsRef<Path>,
     corpus: Option<String>,
-    feedback: Arc<T>,
+    feedback: Arc<Feedback>,
     stop_bc: Sender<()>,
     log: Logger,
 ) -> io::Result<()> {
     info!(log, "Starting hfuzz"; "dir" => dir.as_ref().to_str());
+    feedback.started();
 
     let mut handles = vec![];
 
@@ -71,10 +72,13 @@ pub async fn run<T: Feedback + Send + Sync + 'static>(
     }
 
     for handle in handles {
-        if let Err(e) = handle.await? {
-            error!(log, "Error running target: {}", e);
+        match handle.await {
+            Err(e) => error!(log, "Target panicked: {}", e),
+            Ok(Err(e)) => error!(log, "Target error: {}", e),
+            Ok(Ok(_)) => (),
         }
     }
+    feedback.stopped();
 
     Ok(())
 }

@@ -1,44 +1,137 @@
 use std::{
-    collections::HashMap,
+    path::Path,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
-use slog::{error, info, Logger};
+use chrono::{DateTime, Utc};
+use slog::{debug, error, info, o, trace, Logger};
+use tokio::sync::Notify;
 
-pub trait Feedback {
-    fn started(self: &Arc<Self>, description: String);
-    fn set_total(self: &Arc<Self>, target: impl AsRef<str>, total: u32);
-    fn add_covered(self: &Arc<Self>, target: impl AsRef<str>, covered: u32);
-    fn add_errors(self: &Arc<Self>, target: impl AsRef<str>, errors: u32);
-    fn stopped(self: &Arc<Self>);
-    fn message(self: &Arc<Self>, msg: String);
+use crate::{
+    config,
+    error::Error,
+    report::{FuzzingStatus, Report, TargetStatus},
+};
+
+pub trait FeedbackClient {
+    fn message(&self, message: String);
 }
 
-#[derive(Clone, derive_new::new, Default)]
-pub struct TargetStatus {
-    pub total: u32,
-    pub covered: u32,
-    pub errors: u32,
+pub struct LoggerClient {
+    id: String,
+    log: Logger,
+}
+
+impl LoggerClient {
+    pub fn new(id: String, log: Logger) -> Self {
+        Self { id, log }
+    }
+}
+
+impl FeedbackClient for LoggerClient {
+    fn message(&self, message: String) {
+        info!(self.log, "{}", message; "client" => &self.id);
+    }
+}
+
+pub struct Feedback {
+    map: Arc<SharedFeedbackMap>,
+    client: Arc<Box<dyn FeedbackClient + Send + Sync>>,
+    updater: Arc<ScheduledUpdater>,
+    report: Arc<Report>,
+    log: Logger,
+}
+
+impl Feedback {
+    pub async fn new(
+        config: &config::Feedback,
+        client: Box<dyn FeedbackClient + Send + Sync>,
+        report_dir: impl AsRef<Path>,
+        log: Logger,
+    ) -> Result<Self, Error> {
+        let client = Arc::new(client);
+        let updater = ScheduledUpdater::new(
+            Duration::from_secs(config.update_timeout),
+            Duration::from_secs(config.no_update_timeout),
+            log.new(o!("role" => "updater")),
+        );
+        let report = Report::new(report_dir, log.new(o!("role" => "report"))).await?;
+        Ok(Self {
+            map: Arc::new(SharedFeedbackMap::new()),
+            client,
+            updater: Arc::new(updater),
+            report: Arc::new(report),
+            log,
+        })
+    }
+
+    pub fn set_total(&self, target: &str, total: u32) {
+        self.map.set_total(target, total);
+        self.updater.update();
+    }
+
+    pub fn add_covered(&self, target: &str, covered: u32) {
+        self.map.add_covered(target, covered);
+        self.updater.update();
+    }
+
+    pub fn add_errors(&self, target: &str, errors: u32) {
+        self.map.add_errors(target, errors);
+        self.updater.update();
+    }
+
+    pub fn started(&self) {
+        self.client.message("Fuzzing is started".to_string());
+        let client = self.client.clone();
+        let report = self.report.clone();
+        let map = self.map.clone();
+        let log = self.log.clone();
+        self.updater.start(move |time| {
+            client.message(format!(
+                "Last coverage update at {}",
+                time.format("%Y-%m-%d %H:%M:%S").to_string()
+            ));
+            let snap = map.snapshot();
+            let report = report.clone();
+            let log = log.clone();
+            tokio::spawn(async move {
+                if let Err(e) = report.update(&snap).await {
+                    error!(log, "Error updating progress report: {}", e);
+                } else {
+                    debug!(log, "Updated progress report");
+                }
+                report
+                    .generate_report(&snap)
+                    .await
+                    .expect("error generating report");
+            });
+        });
+    }
+
+    pub fn stopped(&self) {
+        self.client.message("Fuzzing is stopped".to_string());
+        self.updater.stop();
+    }
+
+    pub fn message(&self, msg: String) {
+        self.client.message(msg);
+    }
 }
 
 pub struct SharedFeedbackMap {
-    map: RwLock<HashMap<String, TargetStatus>>,
+    map: RwLock<FuzzingStatus>,
 }
 
 impl SharedFeedbackMap {
     pub fn new() -> Self {
         Self {
-            map: RwLock::new(HashMap::new()),
+            map: RwLock::new(FuzzingStatus::new()),
         }
     }
 
-    #[inline]
-    pub fn get(&self, target: impl AsRef<str>) -> Option<TargetStatus> {
-        self.map.read().unwrap().get(target.as_ref()).cloned()
-    }
-
-    pub fn as_table(&self) -> Vec<(String, TargetStatus)> {
-        self.map.read().unwrap().clone().into_iter().collect()
+    pub fn snapshot(&self) -> FuzzingStatus {
+        self.map.read().unwrap().clone()
     }
 
     pub fn set_total(&self, target: impl AsRef<str>, total: u32) {
@@ -65,53 +158,60 @@ impl SharedFeedbackMap {
     }
 }
 
-pub struct LoggerFeedback {
-    map: SharedFeedbackMap,
+struct ScheduledUpdater {
+    update_timeout: Duration,
+    no_update_timeout: Duration,
+    updated: Arc<Notify>,
+    stopped: Arc<Notify>,
     log: Logger,
 }
 
-impl LoggerFeedback {
-    pub fn new(log: Logger) -> Self {
+impl ScheduledUpdater {
+    fn new(update_timeout: Duration, no_update_timeout: Duration, log: Logger) -> Self {
         Self {
-            map: SharedFeedbackMap::new(),
+            update_timeout,
+            no_update_timeout,
+            updated: Arc::new(Notify::new()),
+            stopped: Arc::new(Notify::new()),
             log,
         }
     }
-    fn feedback(&self, target: impl AsRef<str>) {
-        if let Some(status) = self.map.get(target.as_ref()) {
-            info!(self.log, "[X] {}", target.as_ref(); "total" => status.total, "covered" => status.covered, "errors" => status.errors);
-        } else {
-            error!(self.log, "No such target: {}", target.as_ref());
-        }
+
+    fn start<F: Fn(&DateTime<Utc>) + Send + Sync + 'static>(&self, f: F) {
+        let update_timeout = self.update_timeout;
+        let no_update_timeout = self.no_update_timeout;
+        let updated = self.updated.clone();
+        let stopped = self.stopped.clone();
+        let log = self.log.new(o!());
+        let mut last_update = Utc::now();
+        tokio::spawn(async move {
+            let mut timeout = no_update_timeout;
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(timeout) => {
+                        trace!(log, "Reporting");
+                        f(&last_update);
+                        timeout = no_update_timeout;
+                    }
+                    _ = updated.notified() => {
+                        trace!(log, "New update, still waiting");
+                        last_update = Utc::now();
+                        timeout = update_timeout;
+                    }
+                    _ = stopped.notified() => {
+                        trace!(log, "Requested to stop");
+                        return;
+                    }
+                }
+            }
+        });
     }
-}
 
-impl Feedback for LoggerFeedback {
-    fn set_total(self: &Arc<Self>, target: impl AsRef<str>, total: u32) {
-        let target = target.as_ref();
-        self.map.set_total(target, total);
-        self.feedback(target);
+    fn stop(&self) {
+        self.stopped.notify_one();
     }
 
-    fn add_covered(self: &Arc<Self>, target: impl AsRef<str>, covered: u32) {
-        let target = target.as_ref();
-        self.map.add_covered(target, covered);
-        self.feedback(target);
-    }
-
-    fn add_errors(self: &Arc<Self>, target: impl AsRef<str>, errors: u32) {
-        let target = target.as_ref();
-        self.map.add_errors(target, errors);
-        self.feedback(target);
-    }
-
-    fn started(self: &Arc<Self>, description: String) {
-        info!(self.log, "Fuzzing is started: {}", description);
-    }
-
-    fn stopped(self: &Arc<Self>) {}
-
-    fn message(self: &Arc<Self>, msg: String) {
-        info!(self.log, "Message: {}", msg);
+    fn update(&self) {
+        self.updated.notify_one();
     }
 }
