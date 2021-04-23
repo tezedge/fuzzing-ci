@@ -62,7 +62,7 @@ impl SlackClient {
         Self {
             desc: desc.as_ref().into(),
             channel: channel.as_ref().into(),
-            token: token.as_ref().into(),
+            token: format!("Bearer {}", token.as_ref()),
             log,
         }
     }
