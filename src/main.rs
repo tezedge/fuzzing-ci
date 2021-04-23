@@ -17,6 +17,7 @@ mod hfuzz;
 mod report;
 mod server;
 mod slack;
+mod common;
 
 #[macro_use]
 extern crate clap;
@@ -97,7 +98,7 @@ async fn main() {
         let targets = matches.values_of_lossy("TARGET").unwrap_or(vec![]);
         let feedback = &config.feedback;
         let hfuzz_config = Honggfuzz::new(None, targets);
-        let client = LoggerClient::new("feedback".to_string(), log.clone());
+        let client = LoggerClient::new("feedback", log.clone());
         let feedback = Arc::new(
             Feedback::new(
                 feedback,

@@ -25,8 +25,8 @@ pub struct LoggerClient {
 }
 
 impl LoggerClient {
-    pub fn new(id: String, log: Logger) -> Self {
-        Self { id, log }
+    pub fn new(id: &str, log: Logger) -> Self {
+        Self { id: id.to_string(), log }
     }
 }
 

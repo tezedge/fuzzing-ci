@@ -16,7 +16,7 @@ pub struct Config {
     #[serde(default)]
     pub feedback: Feedback,
     pub slack: Option<Slack>,
-    pub reports_path: String,
+    pub reports_path: PathBuf,
 }
 
 #[derive(Clone, Deserialize, new)]
@@ -89,7 +89,6 @@ impl Config {
             }
         }
 
-        if !config.reports_path.is_empty() {
             let path = PathBuf::from(&config.reports_path);
             if path.is_relative() {
                 config.reports_path = PathBuf::from(file.as_ref())
@@ -103,11 +102,8 @@ impl Config {
                     })?
                     .parent()
                     .unwrap()
-                    .join(path)
-                    .to_string_lossy()
-                    .into_owned();
+                    .join(path);
             }
-        }
 
         Ok(config)
     }
