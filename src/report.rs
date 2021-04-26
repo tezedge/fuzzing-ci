@@ -54,7 +54,6 @@ impl From<i32> for StatusTrend {
     }
 }
 
-
 impl Default for StatusTrend {
     fn default() -> Self {
         Self::None
@@ -402,7 +401,9 @@ impl Report {
         if init_status.is_none() {
             Self::save_status(status, &init_status_file)
                 .await
-                .with_context(|e| format!("error saving {}: {}", status_file.to_string_lossy(), e))?;
+                .with_context(|e| {
+                    format!("error saving {}: {}", status_file.to_string_lossy(), e)
+                })?;
         }
 
         // construct report table containing current and reference data
@@ -440,8 +441,8 @@ impl Report {
                 if delta.covered != 0 {
                     writeln!(
                         summary,
-                        "{}: new edges covered since previous report (+{})",
-                        diff.name, delta.covered
+                        "*+{}* {}: new edges covered since previous report",
+                        delta.covered, diff.name
                     )?;
                     changed = true;
                 }
@@ -449,8 +450,8 @@ impl Report {
                 if (delta.covered, delta.total) != (0, 0) {
                     writeln!(
                         summary,
-                        "{}: covered/total number of edges changed since previous run ({}/{})",
-                        diff.name, delta.covered, delta.total
+                        "*{}/{}* {}: covered/total number of edges changed since previous run",
+                        delta.covered, delta.total, diff.name
                     )?;
                     changed = true;
                 }
