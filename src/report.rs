@@ -30,6 +30,35 @@ pub struct TargetStatusDelta {
     pub total: i32,
     pub covered: i32,
     pub errors: i32,
+    trend: StatusTrend,
+}
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusTrend {
+    None,
+    Improvement,
+    Regression,
+    Progressing,
+}
+
+impl From<i32> for StatusTrend {
+    fn from(delta: i32) -> Self {
+        if delta < 0 {
+            Self::Regression
+        } else if delta > 0 {
+            Self::Improvement
+        } else {
+            Self::None
+        }
+    }
+}
+
+
+impl Default for StatusTrend {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 /// Fuzzing target coverage difference
@@ -59,6 +88,7 @@ impl From<(TargetStatus, TargetStatus)> for TargetStatusDelta {
             total: curr.total as i32 - prev.total as i32,
             covered: curr.covered as i32 - prev.covered as i32,
             errors: curr.errors as i32 - prev.errors as i32,
+            trend: (curr.total as i32 - prev.total as i32).into(),
         }
     }
 }
@@ -115,24 +145,68 @@ const REPORT: &str = r#"
 <html>
 <head>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
+
+body {
+    font-family: 'Inter', sans-serif;
+    color: rgba(255, 255, 255, 0.8);
+    background-color: #1b1b1d;
+    font-weight: 400;
+    height: 100%;
+    margin: 0;
+}
+
 table {
   font-family: arial, sans-serif;
   border-collapse: collapse;
-  width: 60%;
+  width: 80%;
+}
+
+tr:nth-child(even) {
+  background-color: #404343;
+}
+
+tr > td.regression {
+    background-color: rgba(255, 69, 58, 0.5);
+}
+
+tr:nth-child(even) > td.regression {
+    background-color: rgba(255, 69, 58, 0.8);
+}
+
+tr > td.improvement {
+    background-color: rgba(50, 215, 75, 0.5);
+}
+
+tr:nth-child(even) > td.improvement {
+    background-color: rgba(50, 215, 75, 0.8);
+}
+
+body > table > tbody > tr:nth-child(1) > td {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
 }
 
 td, th {
-  border: 1px solid #dddddd;
+  border: 1px solid #000;
   text-align: left;
   padding: 8px;
 }
 
-tr:nth-child(even) {
-  background-color: #dddddd;
-}
 </style>
 </head>
 <body>
+
+<h1>Honggfuzz Coverage Report</h1>
+
+This table shows each fuzzing target with covered/total edges as reported by Honggfuzz,
+covered edges and their increment with the first and previous reports (to see if fuzzing
+discovers new coverage) and coverage information for the previous run on the same branch
+and difference for covered/total edges.
+
+Note that edge-based coverage might be slightly different from build to build, so both
+covered and total number of edges may vary.
 
   <table>
     <tr>
@@ -150,22 +224,22 @@ tr:nth-child(even) {
       <td>{{name}}</td>
       <td>{{curr.covered}}/{{curr.total}}</td>
       {{#if prev}}
-      <td>{{prev.covered}}</td>
-      <td>{{delta.covered}}</td>
+      <td class="{{delta.trend}}">{{prev.covered}}</td>
+      <td class="{{delta.trend}}">{{delta.covered}}</td>
       {{else}}
       <td>N/A</td>
       <td>N/A</td>
       {{/if}}
       {{#if init}}
-      <td>{{init.covered}}</td>
-      <td>{{delta_init.covered}}</td>
+      <td class="{{delta_init.trend}}">{{init.covered}}</td>
+      <td class="{{delta_init.trend}}">{{delta_init.covered}}</td>
       {{else}}
       <td>N/A</td>
       <td>N/A</td>
       {{/if}}
       {{#if prev_run}}
-      <td>{{prev_run.covered}}/{{prev_run.total}}</td>
-      <td>{{delta_run.covered}}/{{delta_run.total}}</td>
+      <td class="{{delta_run.trend}}">{{prev_run.covered}}/{{prev_run.total}}</td>
+      <td class="{{delta_run.trend}}">{{delta_run.covered}}/{{delta_run.total}}</td>
       {{else}}
       <td>N/A</td>
       <td>N/A</td>
@@ -375,7 +449,7 @@ impl Report {
                 if (delta.covered, delta.total) != (0, 0) {
                     writeln!(
                         summary,
-                        "{}: coverage changed since previous run ({}/{})",
+                        "{}: covered/total number of edges changed since previous run ({}/{})",
                         diff.name, delta.covered, delta.total
                     )?;
                     changed = true;
