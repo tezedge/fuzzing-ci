@@ -43,6 +43,10 @@ struct TargetStatusDiff {
     prev: Option<TargetStatus>,
     /// delta with previously reported coverage
     delta: Option<TargetStatusDelta>,
+    /// previously reported coverage
+    init: Option<TargetStatus>,
+    /// delta with previously reported coverage
+    delta_init: Option<TargetStatusDelta>,
     /// previous run coverage
     prev_run: Option<TargetStatus>,
     /// delta with previous run coverage
@@ -65,23 +69,28 @@ impl
         TargetStatus,
         Option<TargetStatus>,
         Option<TargetStatus>,
+        Option<TargetStatus>,
     )> for TargetStatusDiff
 {
     fn from(
-        (name, curr, prev, prev_run): (
+        (name, curr, prev, init, prev_run): (
             String,
             TargetStatus,
+            Option<TargetStatus>,
             Option<TargetStatus>,
             Option<TargetStatus>,
         ),
     ) -> Self {
         let delta = prev.map(|s| (curr, s).into());
+        let delta_init = init.map(|s| (curr, s).into());
         let delta_run = prev_run.map(|s| (curr, s).into());
         Self {
             name,
             curr,
             prev,
             delta,
+            init,
+            delta_init,
             prev_run,
             delta_run,
         }
@@ -131,6 +140,8 @@ tr:nth-child(even) {
       <th>Current coverage</th>
       <th>Previous coverage</th>
       <th>Delta</th>
+      <th>Initial coverage</th>
+      <th>Delta</th>
       <th>Coverage from previous run</th>
       <th>Delta with previous run</th>
     </tr>
@@ -139,8 +150,15 @@ tr:nth-child(even) {
       <td>{{name}}</td>
       <td>{{curr.covered}}/{{curr.total}}</td>
       {{#if prev}}
-      <td>{{prev.covered}}/{{prev.total}}</td>
-      <td>{{delta.covered}}/{{delta.total}}</td>
+      <td>{{prev.covered}}</td>
+      <td>{{delta.covered}}</td>
+      {{else}}
+      <td>N/A</td>
+      <td>N/A</td>
+      {{/if}}
+      {{#if init}}
+      <td>{{init.covered}}</td>
+      <td>{{delta_init.covered}}</td>
       {{else}}
       <td>N/A</td>
       <td>N/A</td>
@@ -159,7 +177,8 @@ tr:nth-child(even) {
 </html>
 "#;
 
-const STATUS_FILE: &str = "hfuzz-status.toml";
+const CURR_STATUS_FILE: &str = "hfuzz-status.toml";
+const INIT_STATUS_FILE: &str = "hfuzz-init-status.toml";
 const REPORT_FILE: &str = "hfuzz-report/index.html";
 
 pub struct Report {
@@ -190,7 +209,7 @@ impl Report {
             None
         };
         let previous = if let Some(previous) = previous {
-            Self::load(&previous.join(STATUS_FILE)).await?
+            Self::load(&previous.join(CURR_STATUS_FILE)).await?
         } else {
             None
         };
@@ -239,7 +258,7 @@ impl Report {
         while let Some(entry) = read_dir.next_entry().await? {
             if entry.file_type().await?.is_dir()
                 && entry.path() != current.as_ref()
-                && entry.path().join(STATUS_FILE).exists()
+                && entry.path().join(CURR_STATUS_FILE).exists()
             {
                 let (path, created) = (entry.path(), entry.metadata().await?.created()?);
                 if let Some(ref latest) = latest {
@@ -295,7 +314,10 @@ impl Report {
         debug!(self.log, "Updating current fuzzing status",);
 
         // load previously reported status and save the new one
-        let status_file = self.reports_dir.join(STATUS_FILE);
+        let status_file = self.reports_dir.join(CURR_STATUS_FILE);
+        let init_status = Self::load(&self.reports_dir.join(INIT_STATUS_FILE))
+            .await
+            .with_context(|e| format!("error loading {}: {}", status_file.to_string_lossy(), e))?;
         let prev_status = Self::load(&status_file)
             .await
             .with_context(|e| format!("error loading {}: {}", status_file.to_string_lossy(), e))?;
@@ -306,7 +328,7 @@ impl Report {
         // construct report table containing current and reference data
         let mut diff: Vec<TargetStatusDiff> = status
             .iter()
-            .map(|(k, s)| self.get_diff(k, s, &prev_status))
+            .map(|(k, s)| self.get_diff(k, s, &prev_status, &init_status))
             .collect();
         diff.sort_by(|a, b| a.name.cmp(&b.name));
         let report = HANDLEBARS.render("report", &diff)?;
@@ -366,8 +388,14 @@ impl Report {
         name: &String,
         curr: &TargetStatus,
         prev_report: &Option<FuzzingStatus>,
+        init_report: &Option<FuzzingStatus>,
     ) -> TargetStatusDiff {
         let prev: Option<TargetStatus> = prev_report
+            .as_ref()
+            .map(|prev| prev.get(name))
+            .flatten()
+            .cloned();
+        let init: Option<TargetStatus> = init_report
             .as_ref()
             .map(|prev| prev.get(name))
             .flatten()
@@ -378,6 +406,6 @@ impl Report {
             .map(|prev| prev.get(name))
             .flatten()
             .cloned();
-        (name.clone(), *curr, prev, prev_run).into()
+        (name.clone(), *curr, prev, init, prev_run).into()
     }
 }
