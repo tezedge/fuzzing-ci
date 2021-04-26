@@ -55,6 +55,7 @@ impl Feedback {
     ) -> Result<Self, Error> {
         let client = Arc::new(client);
         let updater = ScheduledUpdater::new(
+            Duration::from_secs(config.start_timeout),
             Duration::from_secs(config.update_timeout),
             Duration::from_secs(config.no_update_timeout),
             log.new(o!("role" => "updater")),
@@ -177,6 +178,7 @@ impl SharedFeedbackMap {
 }
 
 struct ScheduledUpdater {
+    start_timeout: Duration,
     update_timeout: Duration,
     no_update_timeout: Duration,
     updated: Arc<Notify>,
@@ -185,8 +187,9 @@ struct ScheduledUpdater {
 }
 
 impl ScheduledUpdater {
-    fn new(update_timeout: Duration, no_update_timeout: Duration, log: Logger) -> Self {
+    fn new(start_timeout: Duration, update_timeout: Duration, no_update_timeout: Duration, log: Logger) -> Self {
         Self {
+            start_timeout,
             update_timeout,
             no_update_timeout,
             updated: Arc::new(Notify::new()),
@@ -196,6 +199,7 @@ impl ScheduledUpdater {
     }
 
     fn start<F: Fn(&DateTime<Utc>, bool) + Send + Sync + 'static>(&self, f: F) {
+        let start_timeout = self.start_timeout;
         let update_timeout = self.update_timeout;
         let no_update_timeout = self.no_update_timeout;
         let updated = self.updated.clone();
@@ -205,6 +209,7 @@ impl ScheduledUpdater {
         tokio::spawn(async move {
             let mut timeout = no_update_timeout;
             let mut update = false;
+            let mut start = true;
             loop {
                 tokio::select! {
                     _ = tokio::time::sleep(timeout) => {
@@ -212,12 +217,13 @@ impl ScheduledUpdater {
                         f(&last_update, update);
                         update = false;
                         timeout = no_update_timeout;
+                        start = false;
                     }
                     _ = updated.notified() => {
                         trace!(log, "New update, still waiting");
                         last_update = Utc::now();
                         update = true;
-                        timeout = update_timeout;
+                        timeout = if start { start_timeout } else { update_timeout };
                     }
                     _ = stopped.notified() => {
                         trace!(log, "Requested to stop");

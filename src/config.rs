@@ -26,6 +26,8 @@ pub struct KCov {
 
 #[derive(Clone, Deserialize, new)]
 pub struct Feedback {
+    #[serde(default = "Feedback::default_start_timeout")]
+    pub start_timeout: u64,
     #[serde(default = "Feedback::default_update_timeout")]
     pub update_timeout: u64,
     #[serde(default = "Feedback::default_no_update_timeout")]
@@ -33,8 +35,11 @@ pub struct Feedback {
 }
 
 impl Feedback {
+    fn default_start_timeout() -> u64 {
+        60
+    }
     fn default_update_timeout() -> u64 {
-        10 * 60
+        60 * 60
     }
     fn default_no_update_timeout() -> u64 {
         24 * 60 * 60
@@ -44,6 +49,7 @@ impl Feedback {
 impl Default for Feedback {
     fn default() -> Self {
         Self {
+            start_timeout: Self::default_start_timeout(),
             update_timeout: Self::default_update_timeout(),
             no_update_timeout: Self::default_no_update_timeout(),
         }
