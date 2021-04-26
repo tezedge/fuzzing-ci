@@ -87,7 +87,7 @@ impl From<(TargetStatus, TargetStatus)> for TargetStatusDelta {
             total: curr.total as i32 - prev.total as i32,
             covered: curr.covered as i32 - prev.covered as i32,
             errors: curr.errors as i32 - prev.errors as i32,
-            trend: (curr.total as i32 - prev.total as i32).into(),
+            trend: (curr.covered as i32 - prev.covered as i32).into(),
         }
     }
 }
