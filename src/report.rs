@@ -315,7 +315,7 @@ impl Report {
 
         // load previously reported status and save the new one
         let status_file = self.reports_dir.join(CURR_STATUS_FILE);
-        let init_status_file = self.reports_dir.join(CURR_STATUS_FILE);
+        let init_status_file = self.reports_dir.join(INIT_STATUS_FILE);
         let init_status = Self::load(&init_status_file)
             .await
             .with_context(|e| format!("error loading {}: {}", status_file.to_string_lossy(), e))?;
