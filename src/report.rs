@@ -204,8 +204,12 @@ covered edges and their increment with the first and previous reports (to see if
 discovers new coverage) and coverage information for the previous run on the same branch
 and difference for covered/total edges.
 
+<p>
+
 Note that edge-based coverage might be slightly different from build to build, so both
 covered and total number of edges may vary.
+
+<p>
 
   <table>
     <tr>

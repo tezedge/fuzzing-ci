@@ -5,7 +5,7 @@ dir=$1
 url=$2
 branch=$3
 
-git clone git@github.com:simplestaking/tezedge-fuzzing.git -b fuzz-coverage $dir
+git clone git@github.com:simplestaking/tezedge-fuzzing.git $dir
 cd $dir
 git config -f .gitmodules submodule.code/tezedge.url $url
 git config -f .gitmodules submodule.code/tezedge.branch $branch
