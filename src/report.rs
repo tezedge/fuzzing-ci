@@ -254,8 +254,8 @@ covered and total number of edges may vary.
 </html>
 "#;
 
-const CURR_STATUS_FILE: &str = "hfuzz-status.toml";
-const INIT_STATUS_FILE: &str = "hfuzz-init-status.toml";
+const CURR_STATUS_FILE: &str = "hfuzz-report/hfuzz-status.toml";
+const INIT_STATUS_FILE: &str = "hfuzz-report/hfuzz-init-status.toml";
 const REPORT_FILE: &str = "hfuzz-report/index.html";
 
 pub struct Report {

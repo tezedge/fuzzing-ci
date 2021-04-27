@@ -1,19 +1,10 @@
-use std::{
-    collections::HashMap,
-    io,
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, io, net::SocketAddr, path::{Path, PathBuf}, sync::{Arc, RwLock}};
 
 use derive_new::new;
 use failure::Error;
 use serde::{Deserialize, Serialize};
 use slog::{debug, error, info, o, trace, warn, Logger};
-use tokio::sync::{
-    broadcast::{channel, Sender},
-    Mutex,
-};
+use tokio::sync::{Mutex, Notify, broadcast::{self, Sender}};
 use warp::Filter;
 
 use crate::{build::Builder, common, config::{self, Config}, feedback::{Feedback, FeedbackClient, LoggerClient}, slack::SlackClient};
@@ -55,32 +46,34 @@ struct Author {
     username: String,
 }
 
-fn get_stop_bc(
-    notifies: Arc<RwLock<HashMap<String, Sender<()>>>>,
+fn get_sync(
+    notifies: Arc<RwLock<HashMap<String, Synch>>>,
     branch: &String,
     log: &Logger,
-) -> Sender<()> {
+) -> (Synch, bool) {
     {
         let map = notifies.read().unwrap();
-        if let Some(notify) = map.get(branch) {
+        if let Some(sync) = map.get(branch) {
             trace!(
                 log,
                 "Found broadcast notification, notifying it to stop previous run"
             );
-            match notify.send(()) {
-                Ok(_) => debug!(log, "Notification is sent"),
+            match sync.bcast.send(()) {
+                Ok(_) => {
+                    debug!(log, "Notification is sent, waiting for fuzzing to complete");
+                }
                 Err(e) => warn!(log, "Notification is not sent"; "error" => e.to_string()),
             };
-            return notify.clone();
+            return (sync.clone(), true);
         }
     }
 
     trace!(log, "Creating new broadcast channel");
-    let notify = channel(1).0;
+    let notify = Synch::new();
     let mut map = notifies.write().unwrap();
     map.insert(branch.clone(), notify.clone());
     trace!(log, "Added new broadcast channel");
-    notify
+    (notify, false)
 }
 
 async fn copy_cov_files(
@@ -257,11 +250,25 @@ async fn create_feedback(
     feedback
 }
 
+#[derive(Clone)]
+struct Synch {
+    bcast: broadcast::Sender<()>,
+    notify: Arc<Notify>,
+}
+
+impl Synch {
+    fn new() -> Self {
+        let bcast = broadcast::channel(1).0;
+        let notify = Arc::new(Notify::new());
+        Self { bcast, notify }
+    }
+}
+
 async fn push_hook(
     push: PushEvent,
     config: Config,
     builder: Arc<Mutex<Builder>>,
-    stop_bcs: Arc<RwLock<HashMap<String, Sender<()>>>>,
+    stop_bcs: Arc<RwLock<HashMap<String, Synch>>>,
     log: Logger,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let url = push.repository.url;
@@ -273,7 +280,10 @@ async fn push_hook(
     if config.branches.contains(&branch) {
         let log = log.new(o!("branch" => branch.clone()));
         trace!(log, "Starting fuzzing on branch {}", branch);
-        let stop_bc = get_stop_bc(stop_bcs, &branch, &log);
+        let (sync, existing) = get_sync(stop_bcs, &branch, &log);
+        if existing {
+            sync.notify.notified().await;
+        }
 
         let run_id = if let Some(commit) = &push.head_commit {
             get_run_id(commit)
@@ -286,22 +296,17 @@ async fn push_hook(
         let reports_loc = common::new_local_path(&[&branch, &run_id]);
         let description = format!("Branch _{}_, {}", branch, run_id);
 
-        let feedback = create_feedback(&config, &description, &reports_loc, &stop_bc, &log).await;
+        let feedback = create_feedback(&config, &description, &reports_loc, &sync.bcast, &log).await;
         feedback.message("Preparing for fuzzing".to_string());
         trace!(log, "Spawning fuzzer");
+        let bcast = sync.bcast.clone();
+        let notify = sync.notify.clone();
         tokio::spawn(async move {
-            let mut stop = stop_bc.subscribe();
-            tokio::select! {
-                res = run_fuzzers(url, builder, config, feedback, &reports_loc, &branch, stop_bc.clone(), log.clone()) => {
-                    match res {
-                        Ok(_) => (),
-                        Err(e) => error!(log, "Error running fuzzers"; "error" => e.to_string()),
-                    }
-                }
-                _ = stop.recv() => {
-                    info!(log, "Stopping fuzzers");
-                }
+            match run_fuzzers(url, builder, config, feedback, &reports_loc, &branch, bcast, log.clone()).await {
+                Ok(_) => (),
+                Err(e) => error!(log, "Error running fuzzers"; "error" => e.to_string()),
             }
+            notify.notify_one();
         });
     } else {
         debug!(log, "Skipping branch");
