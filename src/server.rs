@@ -121,7 +121,7 @@ async fn run_fuzzers<'a>(
     log: Logger,
 ) -> Result<(), Error> {
     slog::info!(log, "A branch has been checked out"; "branch" => branch);
-    let path = PathBuf::from(branch);
+    let path = std::env::current_dir()?.join(common::sanitize_path_segment(branch));
     if path.exists() {
         std::fs::remove_dir_all(&path)?;
     }
