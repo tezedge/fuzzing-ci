@@ -121,17 +121,19 @@ async fn run_fuzzers<'a>(
     log: Logger,
 ) -> Result<(), Error> {
     slog::info!(log, "A branch has been checked out"; "branch" => branch);
-    let tempdir = tempfile::tempdir()?;
-    let path = tempdir.path();
-    super::checkout::checkout(path, url, &branch, log.new(slog::o!("stage" => "checkout"))).await?;
+    let path = PathBuf::from(branch);
+    if path.exists() {
+        std::fs::remove_dir_all(&path)?;
+    }
+    super::checkout::checkout(&path, url, &branch, log.new(slog::o!("stage" => "checkout"))).await?;
     let mut handles = vec![];
-    let tezedge_root = tempdir.path().to_path_buf().join("code/tezedge");
+    let tezedge_root = path.join("code/tezedge");
 
     if config.kcov.is_some() {
         debug!(log, "Generating coverage reports");
         let mut some = false;
         for (name, conf) in &config.honggfuzz {
-            let path = PathBuf::from(path).join(conf.path.as_ref().unwrap_or(&name));
+            let path = path.join(conf.path.as_ref().unwrap_or(&name));
 
             let builder = builder.lock().await;
 
@@ -166,7 +168,7 @@ async fn run_fuzzers<'a>(
 
     debug!(log, "Building fuzzing projects");
     for (name, conf) in &config.honggfuzz {
-        let path = PathBuf::from(path).join(conf.path.as_ref().unwrap_or(&name));
+        let path = path.join(conf.path.as_ref().unwrap_or(&name));
         let _ = builder.lock().await.clean(&path).await;
         let _ = builder.lock().await.build(&path).await;
     }
@@ -175,7 +177,7 @@ async fn run_fuzzers<'a>(
         if conf.targets.is_empty() {
             continue;
         }
-        let path = PathBuf::from(path).join(conf.path.as_ref().unwrap_or(&name));
+        let path = path.join(conf.path.as_ref().unwrap_or(&name));
         let feedback = feedback.clone();
         let log = log.new(slog::o!("stage" => "hfuzz"));
         let tezedge_root = tezedge_root.clone();
@@ -195,12 +197,6 @@ async fn run_fuzzers<'a>(
             Err(e) => error!(log, "Fuzzer panicked with error: {}", e),
         }
     }
-    info!(
-        log,
-        "Cleaning up directory {}",
-        tempdir.path().to_str().unwrap_or("<invalid utf8>")
-    );
-    tempdir.close()?;
     Ok(())
 }
 
