@@ -143,57 +143,7 @@ const REPORT: &str = r#"
   <!DOCTYPE html>
 <html>
 <head>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
-
-body {
-    font-family: 'Inter', sans-serif;
-    color: rgba(255, 255, 255, 0.8);
-    background-color: #1b1b1d;
-    font-weight: 400;
-    height: 100%;
-    margin: 0;
-}
-
-table {
-  font-family: arial, sans-serif;
-  border-collapse: collapse;
-  width: 80%;
-}
-
-tr:nth-child(even) {
-  background-color: #404343;
-}
-
-tr > td.regression {
-    background-color: rgba(255, 69, 58, 0.5);
-}
-
-tr:nth-child(even) > td.regression {
-    background-color: rgba(255, 69, 58, 0.8);
-}
-
-tr > td.improvement {
-    background-color: rgba(50, 215, 75, 0.5);
-}
-
-tr:nth-child(even) > td.improvement {
-    background-color: rgba(50, 215, 75, 0.8);
-}
-
-body > table > tbody > tr:nth-child(1) > td {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-top-left-radius: 3px;
-    border-top-right-radius: 3px;
-}
-
-td, th {
-  border: 1px solid #000;
-  text-align: left;
-  padding: 8px;
-}
-
-</style>
+<link rel="stylesheet" type="text/css" href="/styles/hfuzz.css"/>
 </head>
 <body>
 
