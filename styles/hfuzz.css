@@ -13,9 +13,9 @@ body {
 
 table {
     border-collapse: collapse;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    width: 100%;
-    max-width: 100%;
+    border-radius: 2px;
+    border: none;
+    box-shadow: 0 0 0 1px #404343;
 }
 
 tr:nth-child(even) {
@@ -72,6 +72,11 @@ h1 {
     font-size: 20px;
     text-align: center;
     line-height: 15vh;
+}
+
+table {
+    width: 100%;
+    max-width: 100%;
 }
 
 table tbody tr:first-child td:not(:first-child) {
