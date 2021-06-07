@@ -15,8 +15,22 @@ use crate::{
     report::{FuzzingStatus, Report, TargetStatus},
 };
 
+#[derive(Debug, PartialEq, PartialOrd)]
+pub enum FeedbackLevel {
+    Info,
+    Error,
+}
+
 pub trait FeedbackClient {
-    fn message(&self, message: &str);
+    fn message(&self, level: FeedbackLevel, message: &str);
+
+    fn info(&self, message: &str) {
+        self.message(FeedbackLevel::Info, message)
+    }
+
+    fn error(&self, message: &str) {
+        self.message(FeedbackLevel::Error, message)
+    }
 }
 
 pub struct LoggerClient {
@@ -26,13 +40,19 @@ pub struct LoggerClient {
 
 impl LoggerClient {
     pub fn new(id: &str, log: Logger) -> Self {
-        Self { id: id.to_string(), log }
+        Self {
+            id: id.to_string(),
+            log,
+        }
     }
 }
 
 impl FeedbackClient for LoggerClient {
-    fn message(&self, message: &str) {
-        info!(self.log, "{}", message; "client" => &self.id);
+    fn message(&self, level: FeedbackLevel, message: &str) {
+        match level {
+            FeedbackLevel::Error => error!(self.log, "{}", message; "client" => &self.id),
+            FeedbackLevel::Info => info!(self.log, "{}", message; "client" => &self.id),
+        }
     }
 }
 
@@ -60,7 +80,13 @@ impl Feedback {
             Duration::from_secs(config.no_update_timeout),
             log.new(o!("role" => "updater")),
         );
-        let report = Report::new(reports_dir.as_ref(), reports_url, reports_loc.as_ref(), log.new(o!("role" => "report"))).await?;
+        let report = Report::new(
+            reports_dir.as_ref(),
+            reports_url,
+            reports_loc.as_ref(),
+            log.new(o!("role" => "report")),
+        )
+        .await?;
         Ok(Self {
             map: Arc::new(SharedFeedbackMap::new()),
             client,
@@ -80,33 +106,42 @@ impl Feedback {
         self.updater.update();
     }
 
-    pub fn add_errors(&self, target: &str, errors: u32) {
-        self.map.add_errors(target, errors);
-        self.updater.update();
+    pub fn add_error(&self, target: &str, error_input: &str) {
+        self.map.add_errors(target, 1);
+        let client = self.client.clone();
+        let message = match self.report.add_error(target, error_input) {
+            Ok(message) => message,
+            Err(err) => {
+                error!(self.log, "Error reporting error input file: {}", err);
+                format!("Error detected in `{}`: `{}`", target, error_input)
+            }
+        };
+        tokio::spawn(async move {
+            client.error(&message);
+        });
     }
 
     fn update_text(time: &DateTime<Utc>) -> String {
-            let dur = Utc::now().signed_duration_since(time.clone());
-            format!(
-                "Last coverage update at {}, {}s ago",
-                time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                dur.num_seconds(),
-            )
+        let dur = Utc::now().signed_duration_since(time.clone());
+        format!(
+            "Last coverage update at {}, {}s ago",
+            time.format("%Y-%m-%d %H:%M:%S").to_string(),
+            dur.num_seconds(),
+        )
     }
 
     pub fn started(&self) {
-        self.client.message("Fuzzing is started");
+        self.client.info("Fuzzing is started");
         let client = self.client.clone();
         let report = self.report.clone();
         let map = self.map.clone();
         let log = self.log.clone();
         self.updater.start(move |time, update| {
             if !update {
-                client.message(
-                    &format!("No coverage updates since {}",
-                             time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                    )
-                );
+                client.info(&format!(
+                    "No coverage updates since {}",
+                    time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                ));
                 return;
             }
             let mut message = Self::update_text(time);
@@ -118,23 +153,23 @@ impl Feedback {
                 match report.update(&snap).await {
                     Ok(summary) => {
                         message = format!("{}\n{}", message, summary);
-                    },
+                    }
                     Err(e) => {
                         error!(log, "Error updating progress report: {}", e)
                     }
                 }
-                client.message(&message);
+                client.info(&message);
             });
         });
     }
 
     pub fn stopped(&self) {
-        self.client.message("Fuzzing is stopped");
+        self.client.info("Fuzzing is stopped");
         self.updater.stop();
     }
 
     pub fn message(&self, msg: impl AsRef<str>) {
-        self.client.message(msg.as_ref());
+        self.client.info(msg.as_ref());
     }
 }
 
@@ -187,7 +222,12 @@ struct ScheduledUpdater {
 }
 
 impl ScheduledUpdater {
-    fn new(start_timeout: Duration, update_timeout: Duration, no_update_timeout: Duration, log: Logger) -> Self {
+    fn new(
+        start_timeout: Duration,
+        update_timeout: Duration,
+        no_update_timeout: Duration,
+        log: Logger,
+    ) -> Self {
         Self {
             start_timeout,
             update_timeout,

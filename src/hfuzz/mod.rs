@@ -1,14 +1,9 @@
-use std::{
-    collections::VecDeque,
-    io,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::{HashMap, VecDeque}, io, path::{Path, PathBuf}, sync::Arc};
 
 use slog::{error, info, o, trace, Logger};
 use tokio::sync::broadcast::Sender;
 
-use crate::{config::Honggfuzz, feedback::Feedback};
+use crate::{config::{HonggfuzzConfig, TargetConfig}, feedback::Feedback};
 
 mod target;
 
@@ -45,8 +40,9 @@ async fn _find_reports(path: &impl AsRef<Path>, log: &Logger) -> io::Result<Vec<
 
 pub async fn run(
     dir: impl AsRef<Path>,
-    config: Honggfuzz,
-    root: impl AsRef<Path>,
+    env: HashMap<String, String>,
+    config: TargetConfig,
+    hfuzz_config: HonggfuzzConfig,
     corpus: Option<String>,
     feedback: Arc<Feedback>,
     stop_bc: Sender<()>,
@@ -58,13 +54,14 @@ pub async fn run(
 
     for target in config.targets {
         let dir = dir.as_ref().to_path_buf();
+        let env = env.clone();
         let log = log.new(o!("target" => target.clone()));
         let feedback = feedback.clone();
-        let root = root.as_ref().to_path_buf();
         let corpus = corpus.as_ref().map(|c| PathBuf::from(c).join(&target));
         let stop_bc = stop_bc.clone();
+        let hfuzz_config = hfuzz_config.clone();
         handles.push(tokio::spawn(async move {
-            target::Target::new(target, &dir, root, corpus, feedback, stop_bc, log)
+            target::Target::new(target, &dir, env, &hfuzz_config, corpus, feedback, stop_bc, log)
                 .run()
                 .await
         }));

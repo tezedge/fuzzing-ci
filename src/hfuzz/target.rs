@@ -1,27 +1,19 @@
-use std::{
-    borrow::Cow,
-    io,
-    path::{Path, PathBuf},
-    process::Stdio,
-    sync::{mpsc::channel, Arc},
-    time::Duration,
-};
+use std::{borrow::Cow, collections::HashMap, io, path::{Path, PathBuf}, process::Stdio, sync::Arc};
 
-use notify::DebouncedEvent;
-use slog::{debug, error, info, o, trace, Logger};
+use slog::{FnValue, Logger, debug, error, info, trace};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt},
     process::Command,
     sync::broadcast::Sender,
 };
 
-use crate::feedback::Feedback;
+use crate::{config::HonggfuzzConfig, feedback::Feedback};
 
 pub struct Target {
     name: String,
     dir: PathBuf,
+    env: HashMap<String, String>,
     hfuzz_run_args: String,
-    ld_path: PathBuf,
     feedback: Arc<Feedback>,
     stop_bc: Sender<()>,
     log: Logger,
@@ -31,26 +23,23 @@ impl Target {
     pub fn new<'a>(
         name: impl Into<Cow<'a, str>>,
         dir: impl Into<Cow<'a, Path>>,
-        root: impl AsRef<Path>,
+        env: HashMap<String, String>,
+        hfuzz_config: &HonggfuzzConfig,
         corpus: Option<PathBuf>,
         feedback: Arc<Feedback>,
         stop_bc: Sender<()>,
         log: Logger,
     ) -> Self {
         let name = name.into().into_owned();
-        let mut hfuzz_run_args = "-F 1048576".to_string(); // max input size
+        let mut hfuzz_run_args = hfuzz_config.run_args.clone();
         if let Some(corpus) = corpus {
             hfuzz_run_args += &format!(" -i {}", corpus.to_string_lossy());
         }
-        let ld_path = root
-            .as_ref()
-            .to_path_buf()
-            .join("tezos/sys/lib_tezos/artifacts/");
         Self {
             name,
             dir: dir.into().into_owned(),
+            env,
             hfuzz_run_args,
-            ld_path,
             feedback,
             stop_bc,
             log,
@@ -66,10 +55,12 @@ impl Target {
             .arg(&self.name)
             .current_dir(&self.dir)
             .kill_on_drop(true)
-            .env("LD_LIBRARY_PATH", &self.ld_path)
-            .env("HFUZZ_RUN_ARGS", hfuzz_run_args);
+            .env("HFUZZ_RUN_ARGS", &hfuzz_run_args)
+            .envs(&self.env);
 
-        trace!(self.log, "hfuzz command: {:?}", command);
+        trace!(self.log, "hfuzz command: {:?}", command;
+               "HFUZZ_RUN_ARGS" => FnValue(|_| format!("{:?}", &hfuzz_run_args)),
+               "env" => FnValue(|_| format!("{:?}", &self.env)));
 
         command
     }
@@ -86,6 +77,7 @@ impl Target {
 
     async fn filter_output(
         name: String,
+        dir: PathBuf,
         feedback: Arc<Feedback>,
         mut read: (impl AsyncBufRead + Unpin + Send),
         log: Logger,
@@ -125,6 +117,14 @@ impl Target {
                 feedback.add_covered(&name, e);
                 edges += e;
                 trace!(log, "coverage update"; "edges" => edges);
+            } else if line.starts_with("Crash: saved as '") {
+                if let Some(file) = line["Crash: saved as '".len()..].split_terminator("'").next() {
+                    let file = dir.join(file);
+                    let file = file.to_string_lossy();
+                    feedback.add_error(&name, &file)
+                } else {
+                    error!(log, "Cannot parse error line"; "line" => &line)
+                }
             }
         }
     }
@@ -169,67 +169,6 @@ impl Target {
         Ok(edge_nr)
     }
 
-    fn watch_report(&self) -> io::Result<()> {
-        use notify::{watcher, RecursiveMode, Watcher};
-        let (tx, rx) = channel();
-        let mut watcher = watcher(tx, Duration::from_secs(10)).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("cannot create watcher: {}", e),
-            )
-        })?;
-        let mut path = PathBuf::from(&self.dir);
-        path.push("hfuzz_workspace");
-        path.push(&self.name);
-        watcher
-            .watch(path.clone(), RecursiveMode::NonRecursive)
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "cannot watch path {}: {}",
-                        path.to_str().unwrap_or("<invalid path>"),
-                        e
-                    ),
-                )
-            })?;
-        let log = self.log.new(o!("file_watcher" => ()));
-        let feedback = self.feedback.clone();
-        let target = self.name.clone();
-        tokio::task::spawn_blocking(move || {
-            loop {
-                match rx.recv() {
-                    Ok(event) => {
-                        trace!(log, "FS event: {:?}", event);
-                        match event {
-                            DebouncedEvent::Create(path) | DebouncedEvent::Write(path) => {
-                                if let Some(path) = path.file_name() {
-                                    if path == "HONGGFUZZ.REPORT.TXT" {
-                                        feedback.add_errors(&target, 1);
-                                    }
-                                }
-                            }
-                            DebouncedEvent::Remove(path) => match path.file_name() {
-                                Some(path) if path.to_str() == Some(&target) => {
-                                    break;
-                                }
-                                _ => (),
-                            },
-                            _ => (),
-                        }
-                    }
-                    Err(e) => {
-                        error!(log, "Error occured: {}", e);
-                        break;
-                    }
-                }
-            }
-            let _watcher = watcher;
-        });
-
-        Ok(())
-    }
-
     pub async fn run(&self) -> io::Result<()> {
         let total = self.get_total_coverage().await?;
         self.feedback.set_total(&self.name, total);
@@ -246,9 +185,8 @@ impl Target {
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "cannot get stderr"))?;
         let stderr = tokio::io::BufReader::new(stderr);
         let mut stop = self.stop_bc.subscribe();
-        self.watch_report()?;
         tokio::select! {
-            _ = Self::filter_output(self.name.clone(), self.feedback.clone(), stderr, self.log.clone()) => (),
+            _ = Self::filter_output(self.name.clone(), self.dir.clone(), self.feedback.clone(), stderr, self.log.clone()) => (),
             _ = stop.recv() => {
                 debug!(self.log, "Terminating target {}", self.name);
                 child.kill().await?;

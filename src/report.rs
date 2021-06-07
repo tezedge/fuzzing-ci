@@ -10,7 +10,7 @@ use failure::ResultExt;
 use handlebars::Handlebars;
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use reqwest::Url;
-use slog::{debug, info, trace, Logger};
+use slog::{Logger, debug, error, info, trace};
 use tokio::{
     fs::{read_dir, File},
     io::{AsyncReadExt, AsyncWriteExt},
@@ -442,5 +442,42 @@ impl Report {
             .flatten()
             .cloned();
         (name.clone(), *curr, prev, init, prev_run).into()
+    }
+
+    /// Adds the specified error input to the report directory and returns a message with a link to it.
+    pub fn add_error(&self, target: &str, error_input: &str) -> Result<String, failure::Error> {
+        let source = PathBuf::from(error_input);
+        let name = source
+            .file_name()
+            .ok_or(failure::format_err!("File name is missing in {:?}", source))?;
+        let name = name
+            .to_str()
+            .ok_or(failure::format_err!("Cannot stringify path {:?}", name))?;
+        let dest_dir = self.reports_dir.join("failures").join(target);
+        let dest = dest_dir.join(name);
+        let url: Option<Url> = self
+            .reports_url
+            .as_ref()
+            .map(|u| Result::<Url, url::ParseError>::Ok(u.join("failures/")?.join(name)?))
+            .transpose()?;
+        let res = match url {
+            Some(url) => format!("New error detected for `{}`. Input is available at {}", target, url.as_str()),
+            None => format!(
+                "New error detected for `{}`. Input is available at `{}`",
+                target,
+                dest.to_str()
+                    .ok_or(failure::format_err!("Cannot stringify path {:?}", dest))?
+            ),
+        };
+        let log = self.log.clone();
+        tokio::spawn(async move {
+            if let Err(err) = tokio::fs::create_dir_all(&dest_dir).await {
+                error!(log, "Error creating directory {:?}", dest_dir; "error" => err);
+            }
+            if let Err(err) = tokio::fs::copy(&source, &dest).await {
+                error!(log, "Error copying error input file {:?} to {:?}", source, dest; "error" => err);
+            }
+        });
+        Ok(res)
     }
 }

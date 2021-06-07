@@ -1,9 +1,9 @@
 use std::{borrow::Cow, collections::HashMap, io};
 
 use reqwest::header::AUTHORIZATION;
-use slog::{error, trace, warn, Logger};
+use slog::{Logger, error, info, trace, warn};
 
-use crate::feedback::FeedbackClient;
+use crate::feedback::{FeedbackClient, FeedbackLevel};
 
 const POST_MESSAGE_URL: &str = "https://slack.com/api/chat.postMessage";
 
@@ -11,11 +11,16 @@ pub struct SlackClient {
     desc: String,
     channel: String,
     token: String,
+    level: FeedbackLevel,
     log: Logger,
 }
 
 impl FeedbackClient for SlackClient {
-    fn message(&self, message: &str) {
+    fn message(&self, level: FeedbackLevel, message: &str) {
+        if level < self.level {
+            info!(self.log, "Skipped message"; "message" => message);
+            return;
+        }
         let message = format!("{}: {}", self.desc, message);
         let token = self.token.clone();
         let log = self.log.clone();
@@ -57,12 +62,14 @@ impl SlackClient {
         desc: impl AsRef<str>,
         channel: impl AsRef<str>,
         token: impl AsRef<str>,
+        level: FeedbackLevel,
         log: Logger,
     ) -> Self {
         Self {
             desc: desc.as_ref().into(),
             channel: channel.as_ref().into(),
             token: format!("Bearer {}", token.as_ref()),
+            level,
             log,
         }
     }

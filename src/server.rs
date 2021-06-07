@@ -7,7 +7,7 @@ use slog::{debug, error, info, o, trace, warn, Logger};
 use tokio::sync::{Mutex, Notify, broadcast::{self, Sender}};
 use warp::Filter;
 
-use crate::{build::Builder, common, config::{self, Config}, feedback::{Feedback, FeedbackClient, LoggerClient}, slack::SlackClient};
+use crate::{build::Builder, common, config::{self, Config}, feedback::{Feedback, FeedbackClient, FeedbackLevel, LoggerClient}, slack::SlackClient};
 
 const RUN_PATH: &str = "run";
 
@@ -103,6 +103,15 @@ async fn copy_cov_files(
     Ok(())
 }
 
+fn make_relative_to_repo(root: &Path, p: &str) -> Option<String> {
+    let path = Path::new(p);
+    if path.is_relative() {
+        root.join(path).to_str().map(String::from)
+    } else {
+        Some(p.to_string())
+    }
+}
+
 async fn run_fuzzers<'a>(
     url: String,
     builder: Arc<Mutex<Builder>>,
@@ -118,6 +127,18 @@ async fn run_fuzzers<'a>(
     if path.exists() {
         std::fs::remove_dir_all(&path)?;
     }
+
+    let mut env = config.env.clone();
+    env.extend(config.path_env.iter().map(|(k, v)| (k.clone(), v.split(":").filter_map(|s| {
+        let abs = make_relative_to_repo(&path, s);
+        if abs.is_none() {
+            error!(log, "Cannot map path to absolute: {}", s);
+        }
+        abs
+    }).collect::<Vec<_>>().join(":"))));
+
+    trace!(log, "Environment: {:?}", env);
+
     super::checkout::checkout(&path, url, &branch, log.new(slog::o!("stage" => "checkout"))).await?;
     let mut handles = vec![];
     let tezedge_root = path.join("code/tezedge");
@@ -125,7 +146,7 @@ async fn run_fuzzers<'a>(
     if config.kcov.is_some() {
         debug!(log, "Generating coverage reports");
         let mut some = false;
-        for (name, conf) in &config.honggfuzz {
+        for (name, conf) in &config.targets {
             let path = path.join(conf.path.as_ref().unwrap_or(&name));
 
             let builder = builder.lock().await;
@@ -160,24 +181,29 @@ async fn run_fuzzers<'a>(
     }
 
     debug!(log, "Building fuzzing projects");
-    for (name, conf) in &config.honggfuzz {
+    for (name, conf) in &config.targets {
         let path = path.join(conf.path.as_ref().unwrap_or(&name));
         let _ = builder.lock().await.clean(&path).await;
         let _ = builder.lock().await.build(&path).await;
     }
 
-    for (name, conf) in config.honggfuzz {
+    for (name, conf) in config.targets {
         if conf.targets.is_empty() {
             continue;
         }
         let path = path.join(conf.path.as_ref().unwrap_or(&name));
+        let env = env.clone();
+        let hfuzz_config = if let Some(hfuzz_config) = config.honggfuzz.clone() {
+            hfuzz_config
+        } else {
+            continue;
+        };
         let feedback = feedback.clone();
         let log = log.new(slog::o!("stage" => "hfuzz"));
-        let tezedge_root = tezedge_root.clone();
         let corpus = config.corpus.clone();
         let stop_bc = stop_bc.clone();
         handles.push(tokio::spawn(async move {
-            super::hfuzz::run(path, conf, tezedge_root, corpus, feedback, stop_bc, log).await
+            super::hfuzz::run(path, env, conf, hfuzz_config, corpus, feedback, stop_bc, log).await
         }));
     }
     feedback.started();
@@ -200,7 +226,7 @@ fn get_run_id(commit: &Commit) -> String {
     // first line of the commit message
     let message = commit.message.split('\n').next().unwrap();
     format!(
-        "{} - {} by {} at {}",
+        "_{}_ - {} by {} at {}",
         message,
         id,
         commit.author.username,
@@ -220,6 +246,7 @@ async fn create_feedback(
             description,
             &config.channel,
             &config.token,
+            if config.verbose { FeedbackLevel::Info } else { FeedbackLevel::Error },
             log.clone(),
         ))
     } else {
@@ -294,7 +321,7 @@ async fn push_hook(
         };
 
         let reports_loc = common::new_local_path(&[&branch, &run_id]);
-        let description = format!("Branch _{}_, {}", branch, run_id);
+        let description = format!("Branch `{}`, {}", branch, run_id);
 
         let feedback = create_feedback(&config, &description, &reports_loc, &sync.bcast, &log).await;
         feedback.message("Preparing for fuzzing".to_string());
@@ -465,7 +492,7 @@ pub(crate) async fn start(config: Config, log: slog::Logger) {
     };
 
     let report = {
-        let mut projects = config.honggfuzz.keys().cloned().collect::<Vec<_>>();
+        let mut projects = config.targets.keys().cloned().collect::<Vec<_>>();
         projects.sort();
         let hb = hb.clone();
         warp::path!("reports" / String / String).map(move |branch, time| {

@@ -2,11 +2,13 @@
 
 use std::sync::Arc;
 
-use config::Honggfuzz;
+use config::TargetConfig;
 
 use feedback::{Feedback, LoggerClient};
 use slog::{crit, debug, error};
 use tokio::sync::broadcast::channel;
+
+use crate::config::HonggfuzzConfig;
 
 mod build;
 mod checkout;
@@ -39,6 +41,7 @@ async fn main() {
             (about: "runs hfuzz")
             (@arg DIR: +required "Directory containing honggfuzz project")
             (@arg TEZEDGE: +required "Directory containing tezedge project")
+            (@arg HFUZZ_RUN_ARGS: --hfuzz-run-args "Honggfuzz run arguments")
             (@arg CORPUS: -c --corpus "Directory containing honggfuzz corpus")
             (@arg TARGET: ... "Targets to fuzz")
         )
@@ -93,11 +96,12 @@ async fn main() {
         }
     } else if let Some(matches) = matches.subcommand_matches("hfuzz") {
         let dir = matches.value_of_os("DIR").unwrap();
-        let root = matches.value_of_os("TEZEDGE").unwrap();
         let corpus = matches.value_of_lossy("CORPUS");
         let targets = matches.values_of_lossy("TARGET").unwrap_or(vec![]);
         let feedback = &config.feedback;
-        let hfuzz_config = Honggfuzz::new(None, targets);
+        let targets = TargetConfig::new(None, targets);
+        let hfuzz_run_args = matches.value_of_lossy("HFUZZ_RUN_ARGS").unwrap_or_default().into_owned();
+        let hfuzz_config = HonggfuzzConfig::new(hfuzz_run_args);
         let client = LoggerClient::new("feedback", log.clone());
         let feedback = Arc::new(
             Feedback::new(
@@ -115,8 +119,9 @@ async fn main() {
         feedback.started();
         match hfuzz::run(
             dir,
+            config.env,
+            targets,
             hfuzz_config,
-            root,
             corpus.map(|s| s.into_owned()),
             feedback,
             channel(1).0,

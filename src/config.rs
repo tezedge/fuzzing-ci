@@ -1,4 +1,10 @@
-use std::{collections::HashMap, ffi::OsStr, fs::File, io::Read, path::PathBuf};
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    fs::File,
+    io::Read,
+    path::PathBuf,
+};
 
 use derive_new::new;
 use failure::{Error, ResultExt};
@@ -12,11 +18,22 @@ pub struct Config {
     pub branches: Vec<String>,
     pub corpus: Option<String>,
     pub kcov: Option<KCov>,
-    pub honggfuzz: HashMap<String, Honggfuzz>,
+    pub targets: HashMap<String, TargetConfig>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub path_env: HashMap<String, String>,
+    pub honggfuzz: Option<HonggfuzzConfig>,
     #[serde(default)]
     pub feedback: Feedback,
     pub slack: Option<Slack>,
     pub reports_path: PathBuf,
+}
+
+#[derive(Clone, Deserialize, new)]
+pub struct HonggfuzzConfig {
+    #[serde(default)]
+    pub run_args: String,
 }
 
 #[derive(Clone, Deserialize, new)]
@@ -57,7 +74,7 @@ impl Default for Feedback {
 }
 
 #[derive(Clone, Deserialize, new)]
-pub struct Honggfuzz {
+pub struct TargetConfig {
     pub path: Option<String>,
     pub targets: Vec<String>,
 }
@@ -67,6 +84,8 @@ pub struct Slack {
     pub channel: String,
     #[serde(default = "Slack::get_token")]
     pub token: String,
+    #[serde(default)]
+    pub verbose: bool,
 }
 
 impl Config {
@@ -95,21 +114,21 @@ impl Config {
             }
         }
 
-            let path = PathBuf::from(&config.reports_path);
-            if path.is_relative() {
-                config.reports_path = PathBuf::from(file.as_ref())
-                    .canonicalize()
-                    .with_context(|e| {
-                        format!(
-                            "cannot canonicalize path {}: {}",
-                            file.as_ref().to_string_lossy(),
-                            e
-                        )
-                    })?
-                    .parent()
-                    .unwrap()
-                    .join(path);
-            }
+        let path = PathBuf::from(&config.reports_path);
+        if path.is_relative() {
+            config.reports_path = PathBuf::from(file.as_ref())
+                .canonicalize()
+                .with_context(|e| {
+                    format!(
+                        "cannot canonicalize path {}: {}",
+                        file.as_ref().to_string_lossy(),
+                        e
+                    )
+                })?
+                .parent()
+                .unwrap()
+                .join(path);
+        }
 
         Ok(config)
     }
