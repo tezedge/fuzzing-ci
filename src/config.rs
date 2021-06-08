@@ -77,6 +77,7 @@ impl Default for Feedback {
 pub struct TargetConfig {
     pub path: Option<String>,
     pub targets: Vec<String>,
+    pub honggfuzz: Option<HonggfuzzConfig>,
 }
 
 #[derive(Clone, Deserialize, new)]

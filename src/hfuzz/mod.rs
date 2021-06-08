@@ -50,6 +50,7 @@ pub async fn run(
 ) -> io::Result<()> {
     info!(log, "Starting hfuzz"; "dir" => dir.as_ref().to_str());
 
+    let hfuzz_config = config.honggfuzz.unwrap_or(hfuzz_config);
     let mut handles = vec![];
 
     for target in config.targets {
