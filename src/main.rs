@@ -99,7 +99,7 @@ async fn main() {
         let corpus = matches.value_of_lossy("CORPUS");
         let targets = matches.values_of_lossy("TARGET").unwrap_or(vec![]);
         let feedback = &config.feedback;
-        let targets = TargetConfig::new(None, targets);
+        let targets = TargetConfig::new(None, targets, None);
         let hfuzz_run_args = matches.value_of_lossy("HFUZZ_RUN_ARGS").unwrap_or_default().into_owned();
         let hfuzz_config = HonggfuzzConfig::new(hfuzz_run_args);
         let client = LoggerClient::new("feedback", log.clone());
