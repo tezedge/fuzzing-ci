@@ -458,7 +458,7 @@ impl Report {
         let url: Option<Url> = self
             .reports_url
             .as_ref()
-            .map(|u| Result::<Url, url::ParseError>::Ok(u.join("failures/")?.join(name)?))
+            .map(|u| Result::<Url, url::ParseError>::Ok(u.join("failures/")?.join(target)?.join("/")?.join(name)?))
             .transpose()?;
         let res = match url {
             Some(url) => format!("New error detected for `{}`. Input is available at {}", target, url.as_str()),
