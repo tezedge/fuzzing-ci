@@ -63,7 +63,7 @@ that channel will be notified on fuzzing stages and events.
 As prerequisites, a Slack application associated with the CI should be added to
 the team. Then, a separate channel should be created for fuzzing events, and
 this application should be configured to be allowed to post messages in that
-channel. See [here]() for more details.
+channel. See [here](https://api.slack.com/authentication/basics) for more details.
 
 After that, both the application authentication token and the channel ID should
 be specified in the configuration file:
@@ -78,8 +78,20 @@ It is also possible to use environment variable `SLACK_AUTH_TOKEN` to avoid
 specifying the token in the configuration file.
 
 ``` sh
-SLACK_AUTH_TOKEN="xoxb-XXX..... fuzzing-ci server"
+SLACK_AUTH_TOKEN="xoxb-XXX....." fuzzing-ci server
 ```
+
+By default, only errors and timeouts are reported to the slack channel. To
+enable other events (like starting of fuzzing, coverage update etc.) the
+configuration key `verbose` should be set to `true`:
+
+``` toml
+[slack]
+channel = "XXXXXXX"
+token = "xoxb-XXXXXXXXXXX..."
+verbose = true
+```
+
 
 ### Configuration Sample
 
@@ -107,10 +119,14 @@ repository containing the fuzzing projects).
 Open the target project repository settings, select *Webhooks* item and press
 *Add webhook*.
 
-In the *Payload URL* enter the URL the app is accessible with, with `/api` path
+In the *Payload URL* enter the URL the app is accessible with, adding `/run` path
 (e.g. http::/example.com:3030/run).
 
 In the *Content type* select *application/json*.
 
 Press *Add webhook*, and you're set.
 
+## Testing Installation
+
+Commit a change to the branch the CI is configured for and push it to the
+repository with the webhook configured. The fuzzing will be started soon. 
