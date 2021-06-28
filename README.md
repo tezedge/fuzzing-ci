@@ -1,7 +1,22 @@
 # Fuzzing CI
 
-This program is designed to run fuzzing on selected branches of a source
-project, restarting it as a new commit arrives.
+This program implements GitHub webhook to start or restart fuzz tests on a
+project as a new commit arrives.
+
+It might be useful for projects that use fuzz testing (especially using
+`honggfuzz`) as a part of their QA.
+
+It can use a dedicated directory for fuzzing corpora (input files for fuzz targets
+that give different coverage feedback), so after restart previous coverage will
+be achieved pretty soon.
+
+This program can generate coverage reports (using `kcov` utility) so it is
+possible to see line-based coverage provided by the corpora files. 
+
+## Requirements
+
+- Git utility to check out fuzzed project
+- Rust toolchain that is used for building fuzzed project
 
 ## Building
 
@@ -9,43 +24,91 @@ project, restarting it as a new commit arrives.
 cargo build
 ```
 
-## Running
+## Configuration
 
 The most of configuration parameters for the program should be specified via a
 TOML configuration file (see below for details). The `-c/--config` option tells
-it what file to use.
+it what file to use. By default, the `fuzz-ci.toml` file from the current
+directory is used. See the [fuzz-ci.toml] for description on all parameters.
+
+### Fuzzing Project
+
+This CI uses a shell script to check out both fuzzing project (the one that
+defines fuzz targets) and the target project (the one defining functions being
+tested).
+
+The current implementation of the [checkout.sh] implies that the target project
+is a submodule of the fuzzing project.
+
+### Reports
+
+The `reports_path` configuration element is used to specify the directory where
+reports will be placed to. Also it is possible to specify the `url` parameter
+with an externally accessible URL which allows accessing that directory via
+HTTP.
+
+``` toml
+# Path to put coverage reports to
+reports_path = "../reports"
+
+# Url for the reports
+url = "http://reports.example.com/"
+```
+
+### Slack Integration
+
+The fuzzing CI can provide feedback via a Slack channel so persons subscribed to
+that channel will be notified on fuzzing stages and events.
+
+As prerequisites, a Slack application associated with the CI should be added to
+the team. Then, a separate channel should be created for fuzzing events, and
+this application should be configured to be allowed to post messages in that
+channel. See [here]() for more details.
+
+After that, both the application authentication token and the channel ID should
+be specified in the configuration file:
+
+``` toml
+[slack]
+channel = "XXXXXXX"
+token = "xoxb-XXXXXXXXXXX..."
+```
+
+It is also possible to use environment variable `SLACK_AUTH_TOKEN` to avoid
+specifying the token in the configuration file.
+
+``` sh
+SLACK_AUTH_TOKEN="xoxb-XXX..... fuzzing-ci server"
+```
+
+### Configuration Sample
+
+[Here](samples/fuzz-ci.toml) is a sample configuration with description for each parameter:
+
+``` toml
+```
+
+## Running
+
+``` sh
+fuzzing-ci
+```
 
 To run the program as a webhook so it will be notified on pushes, the `server`
-subcommand should be used. It is also possible to specify a URL that allows to
-view coverage reports using the `-u/--url` parameter. If you need it to update
-the team via a Slack channel, an access token might be specified via an
-environment variable `SLACK_AUTH_TOKEN` (see below for Slack integration
-details)
+subcommand should be used.
 
-```
-SLACK_AUTH_TOKEN="xoxb-XXXXXXX" cargo run -- -c config.toml server --url http://fuzz.example.com
+``` sh
+fuzzing-ci server
 ```
 
-## HTTP Endpoints
-
-The application exposes two endpoints:
-
-- '/api' to work as a GitHub webhook.
-- '/reports' to serve static content of Kcov-generated reports.
-
-## Configuration
-
-The program is controlled by a TOML configuration file. 
-
-See the [config.toml] file for the details on possible parameters.
-
-## Webhook Configuration
+## Configuring GitHub Webhook
 
 To receive notifications from GitHub, a webhook should be added to the
 repository that we need to listen to (note that it might be a separate from the
 repository containing the fuzzing projects).
 
-Open the repository settings, select *Webhooks* item and press *Add webhook*.
+Open the target project repository settings, select *Webhooks* item and press
+*Add webhook*.
 
 In the *Payload URL* enter the URL the app is accessible with, with `/api` path
 (e.g. http::/example.com:3030/run).
@@ -53,72 +116,4 @@ In the *Payload URL* enter the URL the app is accessible with, with `/api` path
 In the *Content type* select *application/json*.
 
 Press *Add webhook*, and you're set.
-
-## Nginx Configuration
-
-A webserver might be configured to display Kcov reports. If that is Nginx, the
-[sample configuration file](samples/nginx/fuzzing-ci.conf) can be used.
-
-## Slack Integration
-
-A Slack app should be created to interact with a channel, see
-[here](https://api.slack.com/start/overview#creating). After the Slack
-application is created, its OAuth token should be specified via the
-`slack.token` configuration key or via `SLACK_AUTH_TOKEN` environment variable.
-
-A Slack channel should be specified via `slack.channel` parameter.
-
-## Debugging
-
-By default the program uses `info` logging level. Adding a single `-d` parameter
-turns on `debug` level logging, and another one `-d` parameter makes `trace`
-logging visible (only for `debug` builds).
-
-```
-cargo run -- -dd ...
-```
-
-## Implementation Details
-
-The application implements a GitHub webhook (currently only `ping` and `push`
-events). On each `push` event for the specified branch it starts fuzzing cycle
-for the head version of that branch.
-
-### Fuzzing Cycle
-
-First, if the branch (its previous version) is in the process of fuzzing, all
-the fuzzers are stopped.
-
-Then, the program checks out the fuzzing project. Currently this is done by
-running the script [checkout.sh].
-
-After the fuzzing project is checked  out, its fuzzing projects are prepared for
-fuzzing:
-- Kcov is run against the project, with fuzzing corpus as input, to get source
-  coverage given by the corpus files.
-- Fuzzing project is built by running `cargo hfuzz build`.
-- Fuzzer is started for each of the fuzzing targets by launching `cargo hfuzz run <target>`.
-
-### Fuzzing Feedback
-
-Currently only Honggfuzz is supported. It provides very nice feedback for a
-human user, but to make convertable to any different presentation some tricks
-are needed.
-
-When `honggfuzz` is run with `-v` switch, it does not show that term feedback,
-but instead reports progress in the following form:
-
-```
-
-```
-
-The first group of `/`-separated numbers are: ...
-
-For us the most valuable number is the cound of covered edges.
-
-Also by running the `honggfuzz` on a target shortly and then stopping it (e.g.
-by specifying a low number of iterations or a short period of time) we can see
-the total number of edges detected by it. So using that number and collecting
-covered edges as the fuzzing goes we can report current progress in the form of
-*covered*/*total* edges.
 

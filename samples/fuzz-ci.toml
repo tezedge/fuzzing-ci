@@ -1,0 +1,54 @@
+# Listen address
+address = "0.0.0.0:3030"
+
+# Path to put coverage reports to
+reports_path = "../reports"
+
+# Separate fuzzing will be performed on each of these branches
+branches = ["master"]
+
+# Path to a corpus directory.
+# It should contain a directory for each target containing input files
+corpus = "../corpus"
+
+# Args passed to kcov executable kcov, e.g. use `kcov_args = ["--include-pattern=path/to/code"]`
+# to include only sources of the target program
+kcov_args = ["--include-pattern=code/tezedge"]
+
+# List of PATH-like environment variables to be passed to fuzzing, all relative paths
+# are resolved relative to the project check-out location, e.g. `LD_LIBRARY_PATH=my-repo/libs`
+[path_env]
+LD_LIBRARY_PATH = "code/tezedge/tezos/sys/lib_tezos/artifacts/"
+
+
+# Honggfuzz-specific configuration
+[honggfuzz]
+
+# Additional running arguments for honggfuzz, e.g. `run_args = ["-F 10000"]` to limit the size of input to 10K.
+run_args = "-t 1 -n 1 -T -F 1048576"
+
+
+# Fuzzing project.
+# Fuzz targets can be split into several fuzzing projects having their specific
+# dependencies and fuzzing parameters.
+[targets.tezos_messages_fuzzing]
+
+
+# Honggfuzz run arguments specific for this fuzzing project.
+# E.g. input size and timeout can be altered for a project using `honggfuzz.run_args = "-t 10 -F 1024"`
+#honggfuzz.run_args = ""
+
+# Fuzz targets within the project.
+# This should be a list of fuzz target names, e.g. ones that are specified in `cargo hfuzz run`,
+# like `targets = ["target1", "target2"]`
+targets = [
+    "AckMessage_from_bytes",
+    "ConnectionMessage_from_bytes",
+    "PeerMessageResponse_from_bytes",
+]
+
+# Slack integration configuration
+[slack]
+
+# Slack channel to report messages to
+channel = "XXXXXXXX"
