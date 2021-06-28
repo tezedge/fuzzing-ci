@@ -11,6 +11,9 @@ branches = ["master"]
 # It should contain a directory for each target containing input files
 corpus = "../corpus"
 
+# Kcov configuration
+[kcov]
+
 # Args passed to kcov executable kcov, e.g. use `kcov_args = ["--include-pattern=path/to/code"]`
 # to include only sources of the target program
 kcov_args = ["--include-pattern=code/tezedge"]

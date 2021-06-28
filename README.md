@@ -8,7 +8,8 @@ It might be useful for projects that use fuzz testing (especially using
 
 It can use a dedicated directory for fuzzing corpora (input files for fuzz targets
 that give different coverage feedback), so after restart previous coverage will
-be achieved pretty soon.
+be achieved pretty soon. This way it implements "continuous fuzzing" of a target
+project, catching up new changes in its source and incrementally adding new coverage.
 
 This program can generate coverage reports (using `kcov` utility) so it is
 possible to see line-based coverage provided by the corpora files. 
@@ -39,6 +40,24 @@ tested).
 
 The current implementation of the [checkout.sh](checkout.sh) implies that the target project
 is a submodule of the fuzzing project.
+
+### Using KCov to Render Coverage
+
+Fuzzers like `honggfuzz` maintain input files (corpora) basing on their coverage
+feedback, having at least one input for each distinct coverage occurance. This
+program uses `kcov` utility to render the corpora as line-based coverage report.
+To enable `kcov`, add the `[kcov]` section to the configuration file.
+
+For each fuzzing project all its targets are executed with all input files from
+its corpus using `kcov` to get html report on line-based coverage. Additional
+arguments passed to `kcov` can be specified using `kcov_args` in the `[kcov]`
+section. For example, to get only sources from the fuzzed project in the report,
+use the following:
+
+``` toml
+[kcov]
+kcov_args = ["--include-pattern=code/tezedge"]
+```
 
 ### Reports
 
