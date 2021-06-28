@@ -18,6 +18,8 @@ possible to see line-based coverage provided by the corpora files.
 
 - Git utility to check out fuzzed project
 - Rust toolchain that is used for building fuzzed project
+- `cargo-hfuzz`, `cargo` based launcher for `honggfuzz`
+- `kcov`, coverage generator.
 
 ## Building
 
