@@ -29,7 +29,7 @@ cargo build
 The most of configuration parameters for the program should be specified via a
 TOML configuration file (see below for details). The `-c/--config` option tells
 it what file to use. By default, the `fuzz-ci.toml` file from the current
-directory is used. See the [fuzz-ci.toml] for description on all parameters.
+directory is used. See the [fuzz-ci.toml](fuzz-ci.toml) for description on all parameters.
 
 ### Fuzzing Project
 
@@ -37,7 +37,7 @@ This CI uses a shell script to check out both fuzzing project (the one that
 defines fuzz targets) and the target project (the one defining functions being
 tested).
 
-The current implementation of the [checkout.sh] implies that the target project
+The current implementation of the [checkout.sh](checkout.sh) implies that the target project
 is a submodule of the fuzzing project.
 
 ### Reports
@@ -83,10 +83,7 @@ SLACK_AUTH_TOKEN="xoxb-XXX..... fuzzing-ci server"
 
 ### Configuration Sample
 
-[Here](samples/fuzz-ci.toml) is a sample configuration with description for each parameter:
-
-``` toml
-```
+The [samples/fuzz-ci.toml](samples/fuzz-ci.toml) is a sample configuration with description for each parameter
 
 ## Running
 
