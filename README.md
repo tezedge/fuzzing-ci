@@ -21,11 +21,14 @@ possible to see line-based coverage provided by the corpora files.
 - `cargo-hfuzz`, `cargo` based launcher for `honggfuzz`
 - `kcov`, coverage generator.
 
-## Building
+## Installation
 
 ```
-cargo build
+cargo install --path=.
 ```
+
+This will install the executable `fuzzing-ci` into the `$CARGO_HOME/bin`
+directory.
 
 ## Configuration
 
@@ -151,3 +154,12 @@ Press *Add webhook*, and you're set.
 
 Commit a change to the branch the CI is configured for and push it to the
 repository with the webhook configured. The fuzzing will be started soon. 
+
+## Troubleshooting
+
+See the application log for `[ERROR]` entries. Also to increase verbosity `-v`
+parameter can be used:
+
+``` sh
+fuzzing-ci -v server
+```
