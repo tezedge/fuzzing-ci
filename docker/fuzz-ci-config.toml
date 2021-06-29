@@ -2,6 +2,8 @@ address = "0.0.0.0:3030"
 
 reports_path = "/reports"
 
+corpus = "/corpus"
+
 branches = ["fuzzing-ci-test"]
 
 url = "http://example.com/"
@@ -78,13 +80,6 @@ targets = [
     "HashType_PublicKeySecp256k1_and_string_convert",
     "HashType_PublicKeyP256_and_string_convert"
 ]
-
-
-#[targets.rpc_fuzzing]
-#targets = [
-#    "parse_query_string"
-#,  "protocol_handler_test"
-#]
 
 [targets.storage_fuzzing]
 targets = [

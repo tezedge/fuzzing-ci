@@ -35,3 +35,9 @@ pub fn sanitize_url_path_segment(segment: &OsStr) -> String {
     )
     .to_string()
 }
+
+pub fn u8_slice_to_string(slice: &[u8]) -> String {
+    std::str::from_utf8(slice)
+        .unwrap_or("<invalid utf8>")
+        .to_string()
+}

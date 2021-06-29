@@ -19,6 +19,7 @@ services:
       - seccomp:unconfined
     volumes:
       - reports:/reports
+      - corpus:/corpus
       - ./styles:/styles
       - ./checkout.sh:/checkout.sh
       - ./docker/fuzz-ci-config.toml:/fuzz-ci.toml

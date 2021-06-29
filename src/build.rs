@@ -8,7 +8,7 @@ use std::{
 use slog::{debug, trace, FnValue, Logger};
 use tokio::{fs::read_dir, process::Command};
 
-use crate::config::KCov;
+use crate::{common::u8_slice_to_string, config::KCov};
 
 #[derive(Clone)]
 pub struct Builder {
@@ -30,21 +30,15 @@ impl Builder {
         os_str.as_ref().to_string_lossy().into_owned()
     }
 
-    fn u8_slice_to_string(slice: &[u8]) -> String {
-        std::str::from_utf8(slice)
-            .unwrap_or("<invalid utf8>")
-            .to_string()
-    }
-
     fn check_output(&self, command: impl AsRef<str>, output: Output) -> io::Result<()> {
         trace!(self.log, "checking output of {}", command.as_ref();
-               "stdout" => Self::u8_slice_to_string(&output.stdout),
-               "stderr" => Self::u8_slice_to_string(&output.stderr),
+               "stdout" => u8_slice_to_string(&output.stdout),
+               "stderr" => u8_slice_to_string(&output.stderr),
                "status" => output.status.code(),
         );
         if !output.status.success() {
             debug!(self.log, "{} returned error", command.as_ref();
-                   "stderr" => FnValue(|_| Self::u8_slice_to_string(&output.stderr)),
+                   "stderr" => FnValue(|_| u8_slice_to_string(&output.stderr)),
                    "code" => output.status.code());
             return Err(Self::error(format!("error running {}", command.as_ref())));
         } else {

@@ -1,13 +1,13 @@
-use std::{collections::HashMap, io, net::SocketAddr, path::{Path, PathBuf}, sync::{Arc, RwLock}};
+use std::{collections::HashMap, ffi::OsStr, io, net::SocketAddr, path::{Path, PathBuf}, sync::{Arc, RwLock}};
 
 use derive_new::new;
 use failure::Error;
 use serde::{Deserialize, Serialize};
 use slog::{debug, error, info, o, trace, warn, Logger};
-use tokio::sync::{Mutex, Notify, broadcast::{self, Sender}};
+use tokio::{process::Command, sync::{Mutex, Notify, broadcast::{self, Sender}}};
 use warp::Filter;
 
-use crate::{build::Builder, common, config::{self, Config}, feedback::{Feedback, FeedbackClient, FeedbackLevel, LoggerClient}, slack::SlackClient};
+use crate::{build::Builder, common::{self, u8_slice_to_string}, config::{self, Config}, feedback::{Feedback, FeedbackClient, FeedbackLevel, LoggerClient}, slack::SlackClient};
 
 const RUN_PATH: &str = "run";
 
@@ -144,12 +144,20 @@ async fn run_fuzzers<'a>(
     let tezedge_root = path.join("code/tezedge");
 
     if let Some(ref corpus) = config.corpus {
-        for (_, conf) in &config.targets {
+        info!(log, "Preparing corpus directory {}...", corpus);
+        for (name, conf) in &config.targets {
             for target in &conf.targets {
                 let corpus = Path::new(corpus).join(target);
                 if !corpus.is_dir() {
                     if corpus.exists() {
                         return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("is not a directory: {}", corpus.to_string_lossy())).into());
+                    }
+                    let source = path.join(&conf.path.as_ref().unwrap_or(name)).join("hfuzz_workspace").join(target).join("input");
+                    debug!(log, "Copying input files from {:?} to {:?}", source, corpus);
+                    let output = Command::new("cp").args(&[OsStr::new("-r"), source.as_os_str(), corpus.as_os_str()]).output().await?;
+                    if !output.status.success() {
+                        error!(log, "Cannot copy input files for {}", target; "stderr" => u8_slice_to_string(&output.stderr));
+                        return Err(io::Error::new(io::ErrorKind::Other, format!("Cannot copy input files for {}", target)).into());
                     }
                     tokio::fs::create_dir_all(corpus).await?;
                 }
