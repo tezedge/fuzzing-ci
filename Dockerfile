@@ -9,15 +9,19 @@ COPY Cargo.* ./
 RUN cargo install --path . --root /usr/local
 
 
-FROM rust
+FROM simplestakingcom/tezedge-ci-builder
+
+USER root
 
 ARG RUST_NIGHTLY_VERSION=nightly-2020-12-31
 RUN rustup install ${RUST_NIGHTLY_VERSION} && rustup default ${RUST_NIGHTLY_VERSION}
 
 RUN apt-get update && apt-get install -y \
-        git libssl-dev curl build-essential binutils-dev libunwind-dev \
+    git libssl-dev curl build-essential binutils-dev libunwind-dev \
+    libclang-dev \
     libblocksruntime-dev liblzma-dev \
-    libdw-dev libiberty-dev elfutils cmake \
+    python3 libcurl4-openssl-dev libdw-dev libiberty-dev elfutils cmake \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 RUN cargo install honggfuzz cargo-kcov
