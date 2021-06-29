@@ -143,6 +143,20 @@ async fn run_fuzzers<'a>(
     let mut handles = vec![];
     let tezedge_root = path.join("code/tezedge");
 
+    if let Some(ref corpus) = config.corpus {
+        for (_, conf) in &config.targets {
+            for target in &conf.targets {
+                let corpus = Path::new(corpus).join(target);
+                if !corpus.is_dir() {
+                    if corpus.exists() {
+                        return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("is not a directory: {}", corpus.to_string_lossy())).into());
+                    }
+                    tokio::fs::create_dir_all(corpus).await?;
+                }
+            }
+        }
+    }
+
     if config.kcov.is_some() {
         debug!(log, "Generating coverage reports");
         let mut some = false;

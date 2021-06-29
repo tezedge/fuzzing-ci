@@ -80,7 +80,7 @@ impl Builder {
     }
 
     pub async fn kcov(&self, root: impl AsRef<Path>, dir: impl AsRef<Path>) -> io::Result<()> {
-        debug!(self.log, "Running cargo kcov"; "dir" => dir.as_ref().to_str());
+        debug!(self.log, "Running cargo build"; "dir" => dir.as_ref().to_str());
 
         let KCov { kcov_args } = self
             .kcov
