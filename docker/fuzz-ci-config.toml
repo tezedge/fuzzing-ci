@@ -15,7 +15,8 @@ kcov_args = ["--include-pattern=code/tezedge"]
 LD_LIBRARY_PATH="code/tezedge/tezos/sys/lib_tezos/artifacts/"
 
 [honggfuzz]
-run_args = "-t 1 -n 1 -T -F 1048576"
+# timeout is increased for non-beefy machine
+run_args = "-t 10 -n 1 -T -F 1048576"
 
 [targets.tezos_messages_fuzzing]
 targets = [
@@ -84,9 +85,6 @@ targets = [
 [targets.storage_fuzzing]
 targets = [
         "BlockHeaderWithHash_decode",
-        "ContextActionByBlockHashKey_decode",
-        "ContextActionByContractIndexKey_decode",
-        "ContextActionByTypeIndexKey_decode",
         "Hash_decode",
         "MempoolKey_decode",
         "Meta_decode",
@@ -95,7 +93,7 @@ targets = [
 ]
 
 [targets.tezos_protocol_fuzzing]
-honggfuzz.run_args = "-t 10 -n 1 -T -F 1024"
+honggfuzz.run_args = "-t 20 -n 1 -T -F 1024"
 targets = [
         "BinaryReader_read_Z",
         "BinaryReader_read_Mutez",
@@ -107,9 +105,3 @@ targets = [
 [targets.cumulative_coverage_for_all_targets]
 targets = []
 
-
-[feedback]
-update_timeout = 1
-
-#[slack]
-#channel = "C0240NTCDDL"

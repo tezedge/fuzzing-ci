@@ -4,8 +4,8 @@ version: "3.8"
 services:
   proxy:
     build:
-      context: ./docker
-      dockerfile: Dockerfile.nginx
+      context: ./
+      dockerfile: docker/Dockerfile.nginx
     ports:
       - 3030:80
     volumes:
@@ -20,7 +20,6 @@ services:
     volumes:
       - reports:/reports
       - corpus:/corpus
-      - ./styles:/styles
       - ./checkout.sh:/checkout.sh
       - ./docker/fuzz-ci-config.toml:/fuzz-ci.toml
 

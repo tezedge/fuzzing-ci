@@ -32,7 +32,5 @@ RUN curl -L -o - https://github.com/SimonKagstrom/kcov/archive/v${KCOV_VERSION}.
     mkdir /tmp/kcov-${KCOV_VERSION}/build && cd /tmp/kcov-${KCOV_VERSION}/build && \
     cmake .. && make && make install && rm -rf /tmp/kcov-${KCOV_VERSION}
 
-#ENV PATH=$PATH:/root/.cargo/bin/
-
 COPY --from=builder /usr/local/bin/fuzz-ci /usr/local/bin/fuzz-ci
 CMD ["fuzz-ci", "-d", "server"]

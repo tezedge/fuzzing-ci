@@ -6,4 +6,5 @@ RUN git clone https://github.com/tezedge/Nginx-Fancyindex-Theme.git
 
 FROM akoptelov/nginx-themed
 COPY --from=build /Nginx-Fancyindex-Theme /Nginx-Fancyindex-Theme
+COPY ./docker/nginx-default.conf /etc/nginx/conf.d/default.conf
 COPY ./styles /styles
