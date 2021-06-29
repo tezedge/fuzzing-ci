@@ -204,6 +204,9 @@ async fn run_fuzzers<'a>(
 
     debug!(log, "Building fuzzing projects");
     for (name, conf) in &config.targets {
+        if conf.targets.is_empty() {
+            continue;
+        }
         let path = path.join(conf.path.as_ref().unwrap_or(&name));
         let _ = builder.lock().await.clean(&path).await;
         let _ = builder.lock().await.build(&path).await;
