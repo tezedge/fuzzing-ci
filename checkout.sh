@@ -5,7 +5,7 @@ dir=$1
 url=$2
 branch=$3
 
-git clone https://github.com/tezedge/tezedge-fuzzing-public.git "$dir"
+git clone https://github.com/tezedge/tezedge-fuzzing.git "$dir"
 cd $dir
 git config -f .gitmodules submodule.code/tezedge.url "$url"
 git config -f .gitmodules submodule.code/tezedge.branch "$branch"
