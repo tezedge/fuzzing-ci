@@ -1,0 +1,120 @@
+address = "0.0.0.0:3030"
+
+reports_path = "/reports"
+
+branches = ["fuzzing-ci-test"]
+
+url = "http://example.com/"
+
+[kcov]
+kcov_args = ["--include-pattern=code/tezedge"]
+
+[path_env]
+LD_LIBRARY_PATH="code/tezedge/tezos/sys/lib_tezos/artifacts/"
+
+[honggfuzz]
+run_args = "-t 1 -n 1 -T -F 1048576"
+
+[targets.tezos_messages_fuzzing]
+targets = [
+    "AckMessage_from_bytes",
+    "AdvertiseMessage_from_bytes",
+    "BinaryChunk_from_content",
+    "BlockHeader_from_bytes",
+    "BlockHeaderMessage_from_bytes",
+    "Component_from_bytes",
+    "ConnectionMessage_from_bytes",
+    "CurrentBranch_from_bytes",
+    "CurrentBranchMessage_from_bytes",
+    "CurrentHeadMessage_from_bytes",
+    "DeactivateMessage_from_bytes",
+    "GetBlockHeadersMessage_from_bytes",
+    "GetCurrentBranchMessage_from_bytes",
+    "GetCurrentHeadMessage_from_bytes",
+    "GetOperationsForBlocksMessage_from_bytes",
+    "GetOperationsMessage_from_bytes",
+    "GetProtocolsMessage_from_bytes",
+    "Mempool_from_bytes",
+    "MetadataMessage_from_bytes",
+    "NetworkVersion_from_bytes",
+    "Operation_from_bytes",
+    "OperationMessage_from_bytes",
+    "OperationsForBlock_from_bytes",
+    "OperationsForBlocksMessage_from_bytes",
+    "PeerMessageResponse_from_bytes",
+    "Protocol_from_bytes",
+    "ProtocolMessage_from_bytes",
+    "SwapMessage_from_bytes",
+]
+
+[targets.crypto_fuzzing]
+targets = [
+    "base58_from_base58check",
+    "base58_to_base58check",
+    "blake2b_digest_128",
+    "blake2b_digest_160",
+    "blake2b_digest_256",
+    "crypto_box_ProofOfWork_from_hex",
+    "crypto_box_PublicKey_from_hex",
+    "crypto_box_SecretKey_from_hex",
+    "crypto_Nonce_new",
+    "HashType_BlockHash_b58check_to_hash",
+    "HashType_BlockHash_hash_to_b58check",
+    "HashType_ChainId_bytes_and_string_convert",
+    "HashType_BlockHash_bytes_and_string_convert",
+    "HashType_BlockMetadataHash_bytes_and_string_convert",
+    "HashType_OperationHash_bytes_and_string_convert",
+    "HashType_OperationListListHash_bytes_and_string_convert",
+    "HashType_OperationMetadataHash_bytes_and_string_convert",
+    "HashType_OperationMetadataListListHash_bytes_and_string_convert",
+    "HashType_ContextHash_bytes_and_string_convert",
+    "HashType_ProtocolHash_bytes_and_string_convert",
+    "HashType_ContractKt1Hash_bytes_and_string_convert",
+    "HashType_ContractTz1Hash_bytes_and_string_convert",
+    "HashType_ContractTz2Hash_bytes_and_string_convert",
+    "HashType_ContractTz3Hash_and_string_convert",
+    "HashType_CryptoboxPublicKeyHash_bytes_and_string_convert",
+    "HashType_PublicKeyEd25519_and_string_convert",
+    "HashType_PublicKeySecp256k1_and_string_convert",
+    "HashType_PublicKeyP256_and_string_convert"
+]
+
+
+#[targets.rpc_fuzzing]
+#targets = [
+#    "parse_query_string"
+#,  "protocol_handler_test"
+#]
+
+[targets.storage_fuzzing]
+targets = [
+        "BlockHeaderWithHash_decode",
+        "ContextActionByBlockHashKey_decode",
+        "ContextActionByContractIndexKey_decode",
+        "ContextActionByTypeIndexKey_decode",
+        "Hash_decode",
+        "MempoolKey_decode",
+        "Meta_decode",
+        "MetaKey_decode",
+        "OperationKey_decode"
+]
+
+[targets.tezos_protocol_fuzzing]
+honggfuzz.run_args = "-t 10 -n 1 -T -F 1024"
+targets = [
+        "BinaryReader_read_Z",
+        "BinaryReader_read_Mutez",
+        "Protocol_get_constants_for_rpc",
+]
+
+
+# coverage over the whole corpora
+[targets.cumulative_coverage_for_all_targets]
+targets = []
+
+
+[feedback]
+update_timeout = 1
+
+#[slack]
+#channel = "C0240NTCDDL"

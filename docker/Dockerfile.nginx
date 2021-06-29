@@ -1,0 +1,8 @@
+FROM alpine as build
+
+RUN apk add git
+WORKDIR /
+RUN git clone https://github.com/tezedge/Nginx-Fancyindex-Theme.git
+
+FROM akoptelov/nginx-themed
+COPY --from=build /Nginx-Fancyindex-Theme /Nginx-Fancyindex-Theme

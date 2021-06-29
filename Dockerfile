@@ -4,11 +4,31 @@ ARG RUST_NIGHTLY_VERSION=nightly-2020-12-31
 RUN rustup install ${RUST_NIGHTLY_VERSION} && rustup default ${RUST_NIGHTLY_VERSION}
 
 WORKDIR /usr/local/src/fuzz-ci
-COPY . .
-RUN cargo version
-RUN cargo install --path .
+COPY src src
+COPY Cargo.* ./
+RUN cargo install --path . --root /usr/local
 
-FROM debian:buster-slim
-RUN apt-get update && apt-get install -y libssl-dev && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /usr/local/cargo/bin/fuzz-ci /usr/local/bin/fuzz-ci
-CMD ["fuzz-ci", "server"]
+
+FROM rust
+
+ARG RUST_NIGHTLY_VERSION=nightly-2020-12-31
+RUN rustup install ${RUST_NIGHTLY_VERSION} && rustup default ${RUST_NIGHTLY_VERSION}
+
+RUN apt-get update && apt-get install -y \
+        git libssl-dev curl build-essential binutils-dev libunwind-dev \
+    libblocksruntime-dev liblzma-dev \
+    libdw-dev libiberty-dev elfutils cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install honggfuzz cargo-kcov
+
+ARG KCOV_VERSION=38
+RUN curl -L -o - https://github.com/SimonKagstrom/kcov/archive/v${KCOV_VERSION}.tar.gz | \
+    zcat - | tar xf - -C /tmp && \
+    mkdir /tmp/kcov-${KCOV_VERSION}/build && cd /tmp/kcov-${KCOV_VERSION}/build && \
+    cmake .. && make && make install && rm -rf /tmp/kcov-${KCOV_VERSION}
+
+#ENV PATH=$PATH:/root/.cargo/bin/
+
+COPY --from=builder /usr/local/bin/fuzz-ci /usr/local/bin/fuzz-ci
+CMD ["fuzz-ci", "-d", "server"]
