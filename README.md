@@ -27,7 +27,7 @@ possible to see line-based coverage provided by the corpora files.
 cargo install --path=.
 ```
 
-This will install the executable `fuzzing-ci` into the `$CARGO_HOME/bin`
+This will install the executable `fuzz-ci` into the `$CARGO_HOME/bin`
 directory.
 
 ## Configuration
@@ -45,6 +45,16 @@ tested).
 
 The current implementation of the [checkout.sh](checkout.sh) implies that the target project
 is a submodule of the fuzzing project.
+
+### Specifying Input Files
+
+It is possible to specify a dedicated directory that will be used for storing both initial input files for fuzzing and new inputs that introduce new coverage for a target. That way fuzzing performs incrementally -- after restart previously covered cases will be covered at the very beginning of the fuzzing. 
+
+To specify a separate directory the `corpus` configuration element should be used:
+
+``` toml
+corpus = "/corpus"
+```
 
 ### Using KCov to Render Coverage
 
@@ -102,7 +112,7 @@ It is also possible to use environment variable `SLACK_AUTH_TOKEN` to avoid
 specifying the token in the configuration file.
 
 ``` sh
-SLACK_AUTH_TOKEN="xoxb-XXX....." fuzzing-ci server
+SLACK_AUTH_TOKEN="xoxb-XXX....." fuzz-ci server
 ```
 
 By default, only errors and timeouts are reported to the slack channel. To
@@ -124,14 +134,14 @@ The [samples/fuzz-ci.toml](samples/fuzz-ci.toml) is a sample configuration with 
 ## Running
 
 ``` sh
-fuzzing-ci
+fuzz-ci
 ```
 
 To run the program as a webhook so it will be notified on pushes, the `server`
 subcommand should be used.
 
 ``` sh
-fuzzing-ci server
+fuzz-ci server
 ```
 
 ## Configuring GitHub Webhook
@@ -161,5 +171,5 @@ See the application log for `[ERROR]` entries. Also to increase verbosity `-v`
 parameter can be used:
 
 ``` sh
-fuzzing-ci -v server
+fuzz-ci -d server
 ```
