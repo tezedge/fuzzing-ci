@@ -1,13 +1,33 @@
-use std::{collections::HashMap, ffi::OsStr, io, net::SocketAddr, path::{Path, PathBuf}, sync::{Arc, RwLock}};
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    io,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock},
+};
 
 use derive_new::new;
 use failure::Error;
 use serde::{Deserialize, Serialize};
 use slog::{debug, error, info, o, trace, warn, Logger};
-use tokio::{fs, io::AsyncWriteExt, process::Command, sync::{Mutex, Notify, broadcast::{self, Sender}}};
+use tokio::{
+    fs,
+    process::Command,
+    sync::{
+        broadcast::{self, Sender},
+        Mutex, Notify,
+    },
+};
 use warp::Filter;
 
-use crate::{build::Builder, common::{self, sanitize_path_segment, u8_slice_to_string}, config::{self, Config}, feedback::{Feedback, FeedbackClient, FeedbackLevel, LoggerClient}, slack::SlackClient};
+use crate::{
+    build::Builder,
+    common::{self, sanitize_path_segment, u8_slice_to_string},
+    config::{self, Config},
+    feedback::{Feedback, FeedbackClient, FeedbackLevel, LoggerClient},
+    slack::SlackClient,
+};
 
 const RUN_PATH: &str = "run";
 
@@ -130,30 +150,50 @@ async fn run_fuzzers<'a>(
 
     if let Some(hook) = &config.hook {
         slog::info!(log, "Running hook"; "command" => hook);
-        match tokio::process::Command::new("sh").args(["-c", hook]).spawn() {
-            Ok(mut child) =>
-                match child.wait().await {
-                    Ok(status) => if !status.success() {
+        match tokio::process::Command::new("sh")
+            .args(["-c", hook])
+            .spawn()
+        {
+            Ok(mut child) => match child.wait().await {
+                Ok(status) => {
+                    if !status.success() {
                         slog::warn!(log, "Hook exit with error status"; "command" => hook);
                     }
-                    Err(err) => slog::error!(log, "Error waiting for hook completion"; "command" => hook, "error" => err),
-            }
+                }
+                Err(err) => {
+                    slog::error!(log, "Error waiting for hook completion"; "command" => hook, "error" => err)
+                }
+            },
             Err(err) => slog::error!(log, "Error running hook"; "command" => hook, "error" => err),
         }
     }
 
     let mut env = config.env.clone();
-    env.extend(config.path_env.iter().map(|(k, v)| (k.clone(), v.split(":").filter_map(|s| {
-        let abs = make_relative_to_repo(&path, s);
-        if abs.is_none() {
-            error!(log, "Cannot map path to absolute: {}", s);
-        }
-        abs
-    }).collect::<Vec<_>>().join(":"))));
+    env.extend(config.path_env.iter().map(|(k, v)| {
+        (
+            k.clone(),
+            v.split(":")
+                .filter_map(|s| {
+                    let abs = make_relative_to_repo(&path, s);
+                    if abs.is_none() {
+                        error!(log, "Cannot map path to absolute: {}", s);
+                    }
+                    abs
+                })
+                .collect::<Vec<_>>()
+                .join(":"),
+        )
+    }));
 
     trace!(log, "Environment: {:?}", env);
 
-    super::checkout::checkout(&path, url, &branch, log.new(slog::o!("stage" => "checkout"))).await?;
+    super::checkout::checkout(
+        &path,
+        url,
+        &branch,
+        log.new(slog::o!("stage" => "checkout")),
+    )
+    .await?;
     let mut handles = vec![];
     let tezedge_root = path.join("code/tezedge");
 
@@ -164,14 +204,29 @@ async fn run_fuzzers<'a>(
                 let corpus = Path::new(corpus).join(target);
                 if !corpus.is_dir() {
                     if corpus.exists() {
-                        return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("is not a directory: {}", corpus.to_string_lossy())).into());
+                        return Err(io::Error::new(
+                            io::ErrorKind::AlreadyExists,
+                            format!("is not a directory: {}", corpus.to_string_lossy()),
+                        )
+                        .into());
                     }
-                    let source = path.join(&conf.path.as_ref().unwrap_or(name)).join("hfuzz_workspace").join(target).join("input");
+                    let source = path
+                        .join(&conf.path.as_ref().unwrap_or(name))
+                        .join("hfuzz_workspace")
+                        .join(target)
+                        .join("input");
                     debug!(log, "Copying input files from {:?} to {:?}", source, corpus);
-                    let output = Command::new("cp").args(&[OsStr::new("-r"), source.as_os_str(), corpus.as_os_str()]).output().await?;
+                    let output = Command::new("cp")
+                        .args(&[OsStr::new("-r"), source.as_os_str(), corpus.as_os_str()])
+                        .output()
+                        .await?;
                     if !output.status.success() {
                         error!(log, "Cannot copy input files for {}", target; "stderr" => u8_slice_to_string(&output.stderr));
-                        return Err(io::Error::new(io::ErrorKind::Other, format!("Cannot copy input files for {}", target)).into());
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("Cannot copy input files for {}", target),
+                        )
+                        .into());
                     }
                     tokio::fs::create_dir_all(corpus).await?;
                 }
@@ -242,7 +297,17 @@ async fn run_fuzzers<'a>(
         let corpus = config.corpus.clone();
         let stop_bc = stop_bc.clone();
         handles.push(tokio::spawn(async move {
-            super::hfuzz::run(path, env, conf, hfuzz_config, corpus, feedback, stop_bc, log).await
+            super::hfuzz::run(
+                path,
+                env,
+                conf,
+                hfuzz_config,
+                corpus,
+                feedback,
+                stop_bc,
+                log,
+            )
+            .await
         }));
     }
     feedback.started();
@@ -285,7 +350,11 @@ async fn create_feedback(
             description,
             &config.channel,
             &config.token,
-            if config.verbose { FeedbackLevel::Info } else { FeedbackLevel::Error },
+            if config.verbose {
+                FeedbackLevel::Info
+            } else {
+                FeedbackLevel::Error
+            },
             log.clone(),
         ))
     } else {
@@ -330,16 +399,23 @@ impl Synch {
     }
 }
 
-async fn prepare_report_dir(reports_path: &Path, branch: &str, commit_id: &str) -> Result<PathBuf, Error> {
+async fn prepare_report_dir(
+    reports_path: &Path,
+    branch: &str,
+    commit_id: &str,
+    log: &Logger,
+) -> Result<PathBuf, Error> {
     let branch_path = reports_path.join(sanitize_path_segment(branch));
     fs::create_dir_all(&branch_path).await?;
     let commit_id = sanitize_path_segment(commit_id);
     let commit_path = branch_path.join(&commit_id);
     fs::create_dir(&commit_path).await?;
 
-    let mut f = fs::File::create(branch_path.join(".latest")).await?;
-    f.write(commit_id.as_bytes()).await?;
-    f.write(&[0x0a]).await?;//NL
+    let symlink_path = branch_path.join(".latest.fuzzing");
+    if let Err(err) = fs::remove_file(&symlink_path).await {
+        warn!(log, "Cannot remove latest report symlink"; "path" => symlink_path.to_str().unwrap_or("<unknown>"), "error" => err);
+    }
+    fs::symlink(&commit_path, symlink_path).await?;
 
     Ok(commit_path.strip_prefix(reports_path).unwrap().into())
 }
@@ -373,16 +449,30 @@ async fn push_hook(
             "no commit".to_string()
         };
 
-        let reports_loc = prepare_report_dir(&config.reports_path, &branch, &run_id).await.map_err(|_err| warp::reject())?;
+        let reports_loc = prepare_report_dir(&config.reports_path, &branch, &run_id, &log)
+            .await
+            .map_err(|_err| warp::reject())?;
         let description = format!("Branch `{}`, {}", branch, run_id);
 
-        let feedback = create_feedback(&config, &description, &reports_loc, &sync.bcast, &log).await;
+        let feedback =
+            create_feedback(&config, &description, &reports_loc, &sync.bcast, &log).await;
         feedback.message("Preparing for fuzzing".to_string());
         trace!(log, "Spawning fuzzer");
         let bcast = sync.bcast.clone();
         let notify = sync.notify.clone();
         tokio::spawn(async move {
-            match run_fuzzers(url, builder, config, feedback, &reports_loc, &branch, bcast, log.clone()).await {
+            match run_fuzzers(
+                url,
+                builder,
+                config,
+                feedback,
+                &reports_loc,
+                &branch,
+                bcast,
+                log.clone(),
+            )
+            .await
+            {
                 Ok(_) => (),
                 Err(e) => error!(log, "Error running fuzzers"; "error" => e.to_string()),
             }
