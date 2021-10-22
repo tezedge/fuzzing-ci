@@ -411,7 +411,7 @@ async fn prepare_report_dir(
     let commit_path = branch_path.join(&commit_id);
     fs::create_dir(&commit_path).await?;
 
-    let symlink_path = branch_path.join(".latest.fuzzing");
+    let symlink_path = branch_path.join(".fuzzing.latest");
     if let Err(err) = fs::remove_file(&symlink_path).await {
         warn!(log, "Cannot remove latest report symlink"; "path" => symlink_path.to_str().unwrap_or("<unknown>"), "error" => err);
     }
