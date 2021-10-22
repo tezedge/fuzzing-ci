@@ -339,6 +339,7 @@ async fn prepare_report_dir(reports_path: &Path, branch: &str, commit_id: &str) 
 
     let mut f = fs::File::create(branch_path.join(".latest")).await?;
     f.write(commit_id.as_bytes()).await?;
+    f.write(&[0x0a]).await?;//NL
 
     Ok(commit_path.strip_prefix(reports_path).unwrap().into())
 }
