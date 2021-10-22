@@ -1,13 +1,9 @@
-use std::{ffi::{OsStr, OsString}, path::{Path, PathBuf}};
+use std::{ffi::{OsStr, OsString}, path::Path};
 
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use url::Url;
 
 use crate::error::Error;
-
-pub fn new_local_path(segments: &[&str]) -> PathBuf {
-    segments.iter().map(|s| sanitize_path_segment(s)).collect()
-}
 
 /// Sanitize path segment (directory/file) by replacing invalid characters with underscores
 pub fn sanitize_path_segment(segment: &str) -> OsString {

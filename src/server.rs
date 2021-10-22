@@ -4,10 +4,10 @@ use derive_new::new;
 use failure::Error;
 use serde::{Deserialize, Serialize};
 use slog::{debug, error, info, o, trace, warn, Logger};
-use tokio::{process::Command, sync::{Mutex, Notify, broadcast::{self, Sender}}};
+use tokio::{fs, io::AsyncWriteExt, process::Command, sync::{Mutex, Notify, broadcast::{self, Sender}}};
 use warp::Filter;
 
-use crate::{build::Builder, common::{self, u8_slice_to_string}, config::{self, Config}, feedback::{Feedback, FeedbackClient, FeedbackLevel, LoggerClient}, slack::SlackClient};
+use crate::{build::Builder, common::{self, sanitize_path_segment, u8_slice_to_string}, config::{self, Config}, feedback::{Feedback, FeedbackClient, FeedbackLevel, LoggerClient}, slack::SlackClient};
 
 const RUN_PATH: &str = "run";
 
@@ -316,6 +316,18 @@ impl Synch {
     }
 }
 
+async fn prepare_report_dir(reports_path: &Path, branch: &str, commit_id: &str) -> Result<PathBuf, Error> {
+    let branch_path = reports_path.join(sanitize_path_segment(branch));
+    fs::create_dir_all(&branch_path).await?;
+    let commit_path = branch_path.join(sanitize_path_segment(commit_id));
+    fs::create_dir(&commit_path).await?;
+
+    let mut f = fs::File::create(branch_path.join(".latest")).await?;
+    f.write(commit_id.as_bytes()).await?;
+
+    Ok(commit_path.strip_prefix(reports_path).unwrap().into())
+}
+
 async fn push_hook(
     push: PushEvent,
     config: Config,
@@ -345,7 +357,7 @@ async fn push_hook(
             "no commit".to_string()
         };
 
-        let reports_loc = common::new_local_path(&[&branch, &run_id]);
+        let reports_loc = prepare_report_dir(&config.reports_path, &branch, &run_id).await.map_err(|_err| warp::reject())?;
         let description = format!("Branch `{}`, {}", branch, run_id);
 
         let feedback = create_feedback(&config, &description, &reports_loc, &sync.bcast, &log).await;
