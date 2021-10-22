@@ -128,6 +128,13 @@ async fn run_fuzzers<'a>(
         std::fs::remove_dir_all(&path)?;
     }
 
+    if let Some(hook) = &config.hook {
+        slog::info!(log, "Running hook"; "command" => hook);
+        if let Err(err) = tokio::process::Command::new("sh").args(["-c", hook]).output().await {
+            slog::error!(log, "Error running hook"; "command" => hook, "error" => err);
+        }
+    }
+
     let mut env = config.env.clone();
     env.extend(config.path_env.iter().map(|(k, v)| (k.clone(), v.split(":").filter_map(|s| {
         let abs = make_relative_to_repo(&path, s);

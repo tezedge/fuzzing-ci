@@ -28,6 +28,7 @@ pub struct Config {
     pub feedback: Feedback,
     pub slack: Option<Slack>,
     pub reports_path: PathBuf,
+    pub hook: Option<String>,
 }
 
 #[derive(Clone, Deserialize, new)]
