@@ -130,8 +130,15 @@ async fn run_fuzzers<'a>(
 
     if let Some(hook) = &config.hook {
         slog::info!(log, "Running hook"; "command" => hook);
-        if let Err(err) = tokio::process::Command::new("sh").args(["-c", hook]).output().await {
-            slog::error!(log, "Error running hook"; "command" => hook, "error" => err);
+        match tokio::process::Command::new("sh").args(["-c", hook]).spawn() {
+            Ok(mut child) =>
+                match child.wait().await {
+                    Ok(status) => if !status.success() {
+                        slog::warn!(log, "Hook exit with error status"; "command" => hook);
+                    }
+                    Err(err) => slog::error!(log, "Error waiting for hook completion"; "command" => hook, "error" => err),
+            }
+            Err(err) => slog::error!(log, "Error running hook"; "command" => hook, "error" => err),
         }
     }
 
