@@ -415,7 +415,7 @@ async fn prepare_report_dir(
     if let Err(err) = fs::remove_file(&symlink_path).await {
         warn!(log, "Cannot remove latest report symlink"; "path" => symlink_path.to_str().unwrap_or("<unknown>"), "error" => err);
     }
-    fs::symlink(&commit_path, symlink_path).await?;
+    fs::symlink(&commit_id, symlink_path).await?;
 
     Ok(commit_path.strip_prefix(reports_path).unwrap().into())
 }
