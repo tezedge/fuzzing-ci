@@ -1,4 +1,4 @@
-use std::{ffi::{OsStr, OsString}, path::Path};
+use std::{ffi::OsStr, path::Path};
 
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use url::Url;
@@ -6,12 +6,12 @@ use url::Url;
 use crate::error::Error;
 
 /// Sanitize path segment (directory/file) by replacing invalid characters with underscores
-pub fn sanitize_path_segment(segment: &str) -> OsString {
+pub fn sanitize_path_segment(segment: &str) -> String {
     let sanitize_options = sanitize_filename::Options {
         replacement: "_",
         ..Default::default()
     };
-    sanitize_filename::sanitize_with_options(segment, sanitize_options).into()
+    sanitize_filename::sanitize_with_options(segment, sanitize_options)
 }
 
 /// Append relative fs path to the Url.

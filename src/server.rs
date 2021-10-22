@@ -326,7 +326,8 @@ impl Synch {
 async fn prepare_report_dir(reports_path: &Path, branch: &str, commit_id: &str) -> Result<PathBuf, Error> {
     let branch_path = reports_path.join(sanitize_path_segment(branch));
     fs::create_dir_all(&branch_path).await?;
-    let commit_path = branch_path.join(sanitize_path_segment(commit_id));
+    let commit_id = sanitize_path_segment(commit_id);
+    let commit_path = branch_path.join(&commit_id);
     fs::create_dir(&commit_path).await?;
 
     let mut f = fs::File::create(branch_path.join(".latest")).await?;
