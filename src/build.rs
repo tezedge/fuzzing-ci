@@ -134,10 +134,17 @@ impl Builder {
         Ok(())
     }
 
-    pub async fn build(&self, dir: impl AsRef<Path>) -> io::Result<()> {
+    pub async fn build<D, T>(&self, dir: D, targets: &[T]) -> io::Result<()>
+    where D: AsRef<Path>,
+          T: AsRef<str>,
+    {
         debug!(self.log, "Running cargo hfuzz build"; "dir" => dir.as_ref().to_str());
+        let mut args = vec!["hfuzz", "build"];
+        for target in targets {
+            args.extend_from_slice(&["--bin", target.as_ref()]);
+        }
         let output = Command::new("cargo")
-            .args(&["hfuzz", "build"])
+            .args(&args)
             .current_dir(dir)
             .output()
             .await?;

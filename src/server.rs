@@ -278,7 +278,7 @@ async fn run_fuzzers<'a>(
         }
         let path = path.join(conf.path.as_ref().unwrap_or(&name));
         let _ = builder.lock().await.clean(&path).await;
-        let _ = builder.lock().await.build(&path).await;
+        let _ = builder.lock().await.build(&path, &conf.targets).await;
     }
 
     for (name, conf) in config.targets {
